@@ -54,7 +54,7 @@ export default function App() {
               displayName: currentUser.displayName || currentUser.email?.split('@')[0],
               photoURL: currentUser.photoURL || null,
               createdAt: serverTimestamp(),
-              credits: appSettings.defaultCredits,
+              credits: 0,
               role: currentUser.email === 'piccisarfin@gmail.com' ? 'admin' : 'user',
               isBlocked: false
             });

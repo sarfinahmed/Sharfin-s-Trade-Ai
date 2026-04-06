@@ -27,6 +27,7 @@ export interface AppSettings {
   logoUrl: string;
   defaultCredits: number;
   paymentMethodInfo: string;
+  globalNotice?: string;
 }
 
 export interface UsageHistory {

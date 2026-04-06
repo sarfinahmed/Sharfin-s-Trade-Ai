@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell } from 'lucide-react';
 import { analyzeChart, AnalysisResult } from '../lib/gemini';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { UserProfile, AppSettings } from '../types';
+import ProfileSettingsModal from '../components/ProfileSettingsModal';
 
 interface DashboardProps {
   userProfile: UserProfile;
@@ -23,6 +24,19 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [creditAmount, setCreditAmount] = useState(10);
   const [txId, setTxId] = useState('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+
+  // Profile Settings State
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Copy State
+  const [copied, setCopied] = useState(false);
+  const walletAddress = "0xf80301082ed117e7cb16a40d44924df083a27e11";
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(walletAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -148,8 +162,8 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       
       {/* Credit Purchase Modal */}
       {showCreditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-8 max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl my-8">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold flex items-center space-x-2">
                 <CreditCard className="w-5 h-5 text-[#A855F7]" />
@@ -158,14 +172,50 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               <button onClick={() => setShowCreditModal(false)} className="text-[#8A93A6] hover:text-white">✕</button>
             </div>
             
-            <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-4 mb-6">
-              <p className="text-sm text-[#8A93A6] mb-2">Payment Instructions:</p>
-              <p className="text-sm font-mono text-[#A855F7] break-all">{appSettings.paymentMethodInfo}</p>
+            <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-5 mb-6 text-center">
+              <h4 className="text-lg font-semibold text-white mb-1">Deposit USDT to Binance</h4>
+              <p className="text-sm text-[#8A93A6] mb-4">1 Credit = 1 USDT</p>
+              
+              <div className="bg-white p-4 rounded-xl inline-block mb-4">
+                {/* Generic QR Code Placeholder */}
+                <div className="w-40 h-40 bg-gray-200 flex items-center justify-center rounded-lg border-4 border-white">
+                  <div className="text-center">
+                    <div className="w-10 h-10 bg-[#26A17B] rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-white font-bold text-xl">₮</span>
+                    </div>
+                    <span className="text-xs text-gray-500 font-semibold">USDT (ERC20)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-left">
+                <div className="flex justify-between items-center border-b border-[#22283A] pb-2">
+                  <span className="text-sm text-[#8A93A6]">Network</span>
+                  <span className="text-sm font-bold text-white">ETH (ERC20)</span>
+                </div>
+                
+                <div className="pt-1">
+                  <span className="text-sm text-[#8A93A6] block mb-1">Address</span>
+                  <div className="flex items-center justify-between bg-[#1A1F2E] p-3 rounded-lg border border-[#22283A]">
+                    <span className="text-xs font-mono text-[#A855F7] break-all mr-2">
+                      {walletAddress}
+                    </span>
+                    <button 
+                      onClick={handleCopy}
+                      className="p-2 bg-[#22283A] hover:bg-[#2A3143] rounded-md transition-colors shrink-0"
+                      title="Copy Address"
+                    >
+                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-white" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-red-400 mt-2 text-center">Don't send NFTs to this address.</p>
+                </div>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitCreditRequest} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Amount of Credits</label>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Amount of Credits (USDT Sent)</label>
                 <input 
                   type="number" 
                   min="1"
@@ -199,6 +249,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         </div>
       )}
 
+      {/* Profile Settings Modal */}
+      {showProfileModal && (
+        <ProfileSettingsModal onClose={() => setShowProfileModal(false)} />
+      )}
+
       <div className="max-w-6xl mx-auto px-6 py-10 min-h-screen flex flex-col">
         {/* Header */}
         <header className="flex items-center justify-between mb-10">
@@ -217,14 +272,6 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
           </div>
           
           <div className="flex items-center space-x-4">
-            {userProfile.role === 'admin' && (
-              <a 
-                href="/admin"
-                className="hidden sm:flex items-center space-x-2 px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-colors text-sm font-medium text-purple-400"
-              >
-                Admin Panel
-              </a>
-            )}
             <div className="hidden sm:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-4 py-2 rounded-lg">
               <Zap className="w-4 h-4 text-[#F59E0B]" />
               <span className="text-sm font-bold text-white">{userProfile.credits} Credits</span>
@@ -236,6 +283,16 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               </button>
             </div>
 
+            {userProfile.role === 'admin' && (
+              <button 
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="hidden sm:inline">Admin Settings</span>
+              </button>
+            )}
+
             <button 
               onClick={handleLogout}
               className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
@@ -245,6 +302,14 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             </button>
           </div>
         </header>
+
+        {/* Global Notice Banner */}
+        {appSettings.globalNotice && (
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 mb-8 flex items-start space-x-3">
+            <Bell className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+            <p className="text-purple-200 text-sm whitespace-pre-wrap">{appSettings.globalNotice}</p>
+          </div>
+        )}
 
         <main className="flex-grow flex flex-col w-full">
           <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
