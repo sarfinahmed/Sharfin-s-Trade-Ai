@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell } from 'lucide-react';
 import { analyzeChart, AnalysisResult } from '../lib/gemini';
 import { auth, db } from '../firebase';
@@ -13,6 +14,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ userProfile, appSettings }: DashboardProps) {
+  const navigate = useNavigate();
   const [image, setImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -285,11 +287,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
             {userProfile.role === 'admin' && (
               <button 
-                onClick={() => setShowProfileModal(true)}
+                onClick={() => navigate('/admin')}
                 className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
               >
                 <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">Admin Settings</span>
+                <span className="hidden sm:inline">Admin Panel</span>
               </button>
             )}
 
