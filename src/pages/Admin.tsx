@@ -33,6 +33,13 @@ export default function Admin() {
     paymentMethodInfo: "Binance Dollar (BUSD) - Wallet: 0x..."
   });
 
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     // Listen to Users
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
@@ -94,9 +101,10 @@ export default function Admin() {
   const handleUpdateUser = async (uid: string, data: Partial<UserProfile>) => {
     try {
       await updateDoc(doc(db, 'users', uid), data);
+      showToast("User updated successfully");
     } catch (err) {
       console.error("Error updating user:", err);
-      alert("Failed to update user.");
+      showToast("Failed to update user", "error");
     }
   };
 
@@ -104,9 +112,10 @@ export default function Admin() {
     if (window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
       try {
         await deleteDoc(doc(db, 'users', uid));
+        showToast("User deleted successfully");
       } catch (err) {
         console.error("Error deleting user:", err);
-        alert("Failed to delete user.");
+        showToast("Failed to delete user", "error");
       }
     }
   };
@@ -128,9 +137,10 @@ export default function Admin() {
           }
         }
       }
+      showToast(`Request ${action} successfully`);
     } catch (err) {
       console.error("Error updating request:", err);
-      alert("Failed to update request.");
+      showToast("Failed to update request", "error");
     }
   };
 
@@ -138,7 +148,7 @@ export default function Admin() {
     try {
       const dataToSave = Object.fromEntries(Object.entries(settings).filter(([_, v]) => v !== undefined));
       await updateDoc(doc(db, 'settings', 'appSettings'), dataToSave);
-      alert("Settings saved successfully!");
+      showToast("Settings saved successfully!");
     } catch (err) {
       console.error("Error saving settings:", err);
       // If it doesn't exist, create it
@@ -146,9 +156,9 @@ export default function Admin() {
         const { setDoc } = await import('firebase/firestore');
         const dataToSave = Object.fromEntries(Object.entries(settings).filter(([_, v]) => v !== undefined));
         await setDoc(doc(db, 'settings', 'appSettings'), dataToSave);
-        alert("Settings saved successfully!");
+        showToast("Settings saved successfully!");
       } catch (e) {
-        alert("Failed to save settings.");
+        showToast("Failed to save settings", "error");
       }
     }
   };
@@ -978,13 +988,15 @@ export default function Admin() {
                     const dataToSave = Object.fromEntries(Object.entries(editingPayment).filter(([_, v]) => v !== undefined));
                     if (editingPayment.id) {
                       await updateDoc(doc(db, 'paymentMethods', editingPayment.id), dataToSave);
+                      showToast("Payment method updated successfully");
                     } else {
                       await addDoc(collection(db, 'paymentMethods'), dataToSave);
+                      showToast("Payment method added successfully");
                     }
                     setShowPaymentForm(false);
                   } catch (err) {
                     console.error(err);
-                    alert("Failed to save payment method.");
+                    showToast("Failed to save payment method", "error");
                   }
                 }}
                 className="flex-1 py-2.5 rounded-xl font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
@@ -1074,8 +1086,8 @@ export default function Admin() {
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">Requirements (Comma separated, e.g. "Player ID, Server")</label>
                 <input 
                   type="text" 
-                  value={editingProduct.requirements.join(', ')}
-                  onChange={(e) => setEditingProduct({...editingProduct, requirements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+                  value={editingProduct.requirements.join(',')}
+                  onChange={(e) => setEditingProduct({...editingProduct, requirements: e.target.value.split(',')})}
                   className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
                   placeholder="What user needs to provide"
                 />
@@ -1111,16 +1123,19 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   try {
-                    const dataToSave = Object.fromEntries(Object.entries(editingProduct).filter(([_, v]) => v !== undefined));
+                    const cleanedRequirements = editingProduct.requirements.map(s => s.trim()).filter(Boolean);
+                    const dataToSave = Object.fromEntries(Object.entries({...editingProduct, requirements: cleanedRequirements}).filter(([_, v]) => v !== undefined));
                     if (editingProduct.id) {
                       await updateDoc(doc(db, 'products', editingProduct.id), dataToSave);
+                      showToast("Product updated successfully");
                     } else {
                       await addDoc(collection(db, 'products'), { ...dataToSave, createdAt: serverTimestamp() });
+                      showToast("Product added successfully");
                     }
                     setShowProductForm(false);
                   } catch (err) {
                     console.error(err);
-                    alert("Failed to save product.");
+                    showToast("Failed to save product", "error");
                   }
                 }}
                 className="flex-1 py-2.5 rounded-xl font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
@@ -1185,10 +1200,11 @@ export default function Admin() {
                     await updateDoc(doc(db, 'users', editingUserLimits.uid), {
                       toolLimits: editingUserLimits.toolLimits || {}
                     });
+                    showToast("User limits updated successfully");
                     setEditingUserLimits(null);
                   } catch (err) {
                     console.error("Error updating limits:", err);
-                    alert("Failed to update limits.");
+                    showToast("Failed to update limits", "error");
                   }
                 }}
                 className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
@@ -1345,21 +1361,23 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   if (!editingAiTool.title || !editingAiTool.model) {
-                    alert("Title and Model are required.");
+                    showToast("Title and Model are required.", "error");
                     return;
                   }
                   try {
                     const dataToSave = Object.fromEntries(Object.entries(editingAiTool).filter(([_, v]) => v !== undefined));
                     if (editingAiTool.id) {
                       await updateDoc(doc(db, 'aiTools', editingAiTool.id), dataToSave);
+                      showToast("AI tool updated successfully");
                     } else {
                       await addDoc(collection(db, 'aiTools'), { ...dataToSave, createdAt: serverTimestamp() });
+                      showToast("AI tool added successfully");
                     }
                     setShowAiToolForm(false);
                     setEditingAiTool(null);
                   } catch (err) {
                     console.error("Error saving AI tool:", err);
-                    alert("Failed to save AI tool.");
+                    showToast("Failed to save AI tool", "error");
                   }
                 }}
                 className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
@@ -1368,6 +1386,13 @@ export default function Admin() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-[100] flex items-center space-x-2 px-4 py-3 rounded-xl shadow-lg transition-all transform translate-y-0 opacity-100 ${toast.type === 'success' ? 'bg-green-500/20 border border-green-500/50 text-green-400' : 'bg-red-500/20 border border-red-500/50 text-red-400'}`}>
+          {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+          <span className="font-medium">{toast.message}</span>
         </div>
       )}
     </div>
