@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, AlertCircle, Loader2, Mail, Lock } from 'lucide-react';
 import { auth } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { AppSettings } from '../types';
 
 interface AuthProps {
@@ -10,10 +10,31 @@ interface AuthProps {
 
 export default function Auth({ appSettings }: AuthProps) {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setIsResetting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccess('Password reset email sent! Check your inbox.');
+    } catch (err: any) {
+      console.error("Reset error:", err);
+      setError(err.message || 'Failed to send reset email.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +86,13 @@ export default function Auth({ appSettings }: AuthProps) {
           </div>
         )}
 
+        {success && (
+          <div className="w-full mb-6 border border-green-500/20 bg-green-500/10 rounded-xl p-4 flex items-start space-x-3">
+            <Activity className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-green-200 text-left">{success}</p>
+          </div>
+        )}
+
         <form onSubmit={handleAuth} className="w-full space-y-4">
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#8A93A6]" />
@@ -89,6 +117,20 @@ export default function Auth({ appSettings }: AuthProps) {
               minLength={6}
             />
           </div>
+          
+          {!isSignUp && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={isResetting}
+                className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                {isResetting ? 'Sending...' : 'Forgot Password?'}
+              </button>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoggingIn}

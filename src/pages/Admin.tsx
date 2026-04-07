@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, Product, Order } from '../types';
-import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check } from 'lucide-react';
+import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, Product, Order, AITool } from '../types';
+import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check, Cpu, Zap } from 'lucide-react';
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools'>('overview');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [aiTools, setAiTools] = useState<AITool[]>([]);
   const [userSearch, setUserSearch] = useState('');
   
   // Modals/Forms state
@@ -20,6 +21,10 @@ export default function Admin() {
   
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const [showAiToolForm, setShowAiToolForm] = useState(false);
+  const [editingAiTool, setEditingAiTool] = useState<Partial<AITool> | null>(null);
+  const [editingUserLimits, setEditingUserLimits] = useState<UserProfile | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>({
     appName: "Sharfin's AI",
@@ -69,6 +74,11 @@ export default function Admin() {
       setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
     });
 
+    // Listen to AI Tools
+    const unsubAiTools = onSnapshot(collection(db, 'aiTools'), (snap) => {
+      setAiTools(snap.docs.map(d => ({ ...d.data(), id: d.id } as AITool)));
+    });
+
     return () => {
       unsubUsers();
       unsubRequests();
@@ -77,6 +87,7 @@ export default function Admin() {
       unsubPayments();
       unsubProducts();
       unsubOrders();
+      unsubAiTools();
     };
   }, []);
 
@@ -125,14 +136,16 @@ export default function Admin() {
 
   const handleSaveSettings = async () => {
     try {
-      await updateDoc(doc(db, 'settings', 'appSettings'), { ...settings });
+      const dataToSave = Object.fromEntries(Object.entries(settings).filter(([_, v]) => v !== undefined));
+      await updateDoc(doc(db, 'settings', 'appSettings'), dataToSave);
       alert("Settings saved successfully!");
     } catch (err) {
       console.error("Error saving settings:", err);
       // If it doesn't exist, create it
       try {
         const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'settings', 'appSettings'), { ...settings });
+        const dataToSave = Object.fromEntries(Object.entries(settings).filter(([_, v]) => v !== undefined));
+        await setDoc(doc(db, 'settings', 'appSettings'), dataToSave);
         alert("Settings saved successfully!");
       } catch (e) {
         alert("Failed to save settings.");
@@ -184,6 +197,10 @@ export default function Admin() {
             <p className="px-4 text-xs font-semibold text-[#8A93A6] uppercase tracking-wider">System</p>
           </div>
 
+          <button onClick={() => setActiveTab('ai_tools')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'ai_tools' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <Cpu className="w-5 h-5" />
+            <span className="hidden md:inline">AI Tools</span>
+          </button>
           <button onClick={() => setActiveTab('settings')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <Settings className="w-5 h-5" />
             <span className="hidden md:inline">Settings</span>
@@ -310,6 +327,13 @@ export default function Admin() {
                         </span>
                       </td>
                       <td className="px-6 py-4 flex space-x-2">
+                        <button 
+                          onClick={() => setEditingUserLimits(u)}
+                          className="p-2 rounded hover:bg-[#22283A] text-purple-400 hover:text-purple-300 transition-colors"
+                          title="Manage AI Tool Limits"
+                        >
+                          <Zap className="w-4 h-4" />
+                        </button>
                         <button 
                           onClick={() => handleUpdateUser(u.uid, { isBlocked: !u.isBlocked })}
                           className="p-2 rounded hover:bg-[#22283A] text-[#8A93A6] hover:text-white transition-colors"
@@ -635,6 +659,100 @@ export default function Admin() {
           </div>
         )}
 
+        {activeTab === 'ai_tools' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h3 className="text-2xl font-bold">AI Tools Management</h3>
+              <button 
+                onClick={() => {
+                  setEditingAiTool({
+                    title: '',
+                    description: '',
+                    type: 'image_to_image',
+                    model: 'gemini-2.5-flash-image',
+                    systemPrompt: '',
+                    userPromptAllowed: true,
+                    cost: 1,
+                    costType: 'credit',
+                    defaultFreeUses: 0,
+                    isActive: true
+                  });
+                  setShowAiToolForm(true);
+                }}
+                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add AI Tool</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {aiTools.map(tool => (
+                <div key={tool.id} className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 flex flex-col">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center space-x-2">
+                      <Cpu className="w-5 h-5 text-purple-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-purple-400">{tool.type.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditingAiTool(tool);
+                          setShowAiToolForm(true);
+                        }}
+                        className="p-2 text-[#8A93A6] hover:text-white hover:bg-[#1A1F2E] rounded-lg transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm('Delete this AI tool?')) {
+                            await deleteDoc(doc(db, 'aiTools', tool.id!));
+                          }
+                        }}
+                        className="p-2 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <h4 className="text-lg font-bold text-white mb-2">{tool.title}</h4>
+                  <p className="text-sm text-[#8A93A6] mb-4 flex-grow">{tool.description}</p>
+                  
+                  <div className="space-y-2 text-sm text-[#8A93A6] mb-4">
+                    <div className="flex justify-between">
+                      <span>Model:</span>
+                      <span className="text-white">{tool.model}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cost:</span>
+                      <span className="text-white">{tool.cost} {tool.costType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>User Prompt:</span>
+                      <span className={tool.userPromptAllowed ? "text-green-400" : "text-red-400"}>
+                        {tool.userPromptAllowed ? 'Allowed' : 'Locked'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Status:</span>
+                      <span className={tool.isActive ? "text-green-400" : "text-red-400"}>
+                        {tool.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {aiTools.length === 0 && (
+                <div className="col-span-full text-center py-12 bg-[#131722] border border-[#22283A] rounded-2xl">
+                  <Cpu className="w-12 h-12 text-[#22283A] mx-auto mb-4" />
+                  <p className="text-[#8A93A6]">No AI tools configured.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="space-y-6 max-w-2xl">
             <h3 className="text-2xl font-bold">App Settings</h3>
@@ -741,6 +859,18 @@ export default function Admin() {
                 
                 <div className="space-y-4">
                   <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">Free Credits for New Users</label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={settings.freeCreditsOnSignup || 0}
+                      onChange={(e) => setSettings({...settings, freeCreditsOnSignup: parseInt(e.target.value) || 0})}
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    />
+                    <p className="text-xs text-[#8A93A6] mt-2">Number of free credits given to users when they first sign up.</p>
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-[#8A93A6] mb-2">Custom Gemini API Key (Optional)</label>
                     <input 
                       type="password" 
@@ -845,10 +975,11 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   try {
+                    const dataToSave = Object.fromEntries(Object.entries(editingPayment).filter(([_, v]) => v !== undefined));
                     if (editingPayment.id) {
-                      await updateDoc(doc(db, 'paymentMethods', editingPayment.id), { ...editingPayment });
+                      await updateDoc(doc(db, 'paymentMethods', editingPayment.id), dataToSave);
                     } else {
-                      await addDoc(collection(db, 'paymentMethods'), { ...editingPayment });
+                      await addDoc(collection(db, 'paymentMethods'), dataToSave);
                     }
                     setShowPaymentForm(false);
                   } catch (err) {
@@ -980,11 +1111,11 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   try {
-                    const dataToSave = { ...editingProduct, createdAt: serverTimestamp() };
+                    const dataToSave = Object.fromEntries(Object.entries(editingProduct).filter(([_, v]) => v !== undefined));
                     if (editingProduct.id) {
                       await updateDoc(doc(db, 'products', editingProduct.id), dataToSave);
                     } else {
-                      await addDoc(collection(db, 'products'), dataToSave);
+                      await addDoc(collection(db, 'products'), { ...dataToSave, createdAt: serverTimestamp() });
                     }
                     setShowProductForm(false);
                   } catch (err) {
@@ -995,6 +1126,245 @@ export default function Admin() {
                 className="flex-1 py-2.5 rounded-xl font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Tool Limits Modal */}
+      {editingUserLimits && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-md p-6 my-8">
+            <h3 className="text-xl font-bold text-white mb-2">Manage AI Tool Limits</h3>
+            <p className="text-[#8A93A6] mb-6 text-sm">User: {editingUserLimits.email}</p>
+            
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+              {aiTools.map(tool => {
+                const currentLimit = editingUserLimits.toolLimits?.[tool.id!] ?? tool.defaultFreeUses;
+                return (
+                  <div key={tool.id} className="flex items-center justify-between bg-[#0B0E14] p-3 rounded-xl border border-[#22283A]">
+                    <div>
+                      <div className="text-white font-medium">{tool.title}</div>
+                      <div className="text-xs text-[#8A93A6]">{tool.type.replace(/_/g, ' ')}</div>
+                    </div>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={currentLimit}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0;
+                        setEditingUserLimits({
+                          ...editingUserLimits,
+                          toolLimits: {
+                            ...(editingUserLimits.toolLimits || {}),
+                            [tool.id!]: val
+                          }
+                        });
+                      }}
+                      className="w-20 bg-[#131722] border border-[#22283A] rounded px-2 py-1 text-white text-center"
+                    />
+                  </div>
+                );
+              })}
+              {aiTools.length === 0 && (
+                <p className="text-[#8A93A6] text-center py-4">No AI tools available.</p>
+              )}
+            </div>
+
+            <div className="flex space-x-3 mt-8">
+              <button 
+                onClick={() => setEditingUserLimits(null)}
+                className="flex-1 py-2 rounded-xl font-semibold bg-[#22283A] text-white hover:bg-[#2A3143] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    await updateDoc(doc(db, 'users', editingUserLimits.uid), {
+                      toolLimits: editingUserLimits.toolLimits || {}
+                    });
+                    setEditingUserLimits(null);
+                  } catch (err) {
+                    console.error("Error updating limits:", err);
+                    alert("Failed to update limits.");
+                  }
+                }}
+                className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+              >
+                Save Limits
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Tool Form Modal */}
+      {showAiToolForm && editingAiTool && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-2xl p-6 my-8">
+            <h3 className="text-xl font-bold text-white mb-6">{editingAiTool.id ? 'Edit' : 'Add'} AI Tool</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Title</label>
+                  <input 
+                    type="text" 
+                    value={editingAiTool.title}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, title: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Type</label>
+                  <select
+                    value={editingAiTool.type}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, type: e.target.value as any})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="text_to_image">Text to Image</option>
+                    <option value="image_to_image">Image to Image</option>
+                    <option value="text_to_video">Text to Video</option>
+                    <option value="image_to_video">Image to Video</option>
+                    <option value="text_to_text">Text to Text</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Description</label>
+                <textarea 
+                  value={editingAiTool.description}
+                  onChange={(e) => setEditingAiTool({...editingAiTool, description: e.target.value})}
+                  rows={2}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Model Name</label>
+                  <input 
+                    type="text" 
+                    value={editingAiTool.model}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, model: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500 font-mono text-sm"
+                    placeholder="e.g. gemini-2.5-flash-image"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Custom API Key (Optional)</label>
+                  <input 
+                    type="password" 
+                    value={editingAiTool.apiKey || ''}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, apiKey: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500 font-mono text-sm"
+                    placeholder="Leave empty to use default"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">System Prompt (Admin defined)</label>
+                <textarea 
+                  value={editingAiTool.systemPrompt}
+                  onChange={(e) => setEditingAiTool({...editingAiTool, systemPrompt: e.target.value})}
+                  rows={3}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  placeholder="Instructions for the AI model..."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Cost Amount</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={editingAiTool.cost}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, cost: parseInt(e.target.value) || 0})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Cost Type</label>
+                  <select
+                    value={editingAiTool.costType}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, costType: e.target.value as any})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="credit">Credits</option>
+                    <option value="wallet">Wallet Balance</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Free Uses (New Users)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={editingAiTool.defaultFreeUses}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, defaultFreeUses: parseInt(e.target.value) || 0})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col space-y-3 pt-2">
+                <div className="flex items-center space-x-2">
+                  <input 
+                    type="checkbox" 
+                    checked={editingAiTool.userPromptAllowed}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, userPromptAllowed: e.target.checked})}
+                    className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
+                  />
+                  <label className="text-sm font-medium text-white">Allow User to Enter Prompt (If unchecked, user prompt is hidden)</label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input 
+                    type="checkbox" 
+                    checked={editingAiTool.isActive}
+                    onChange={(e) => setEditingAiTool({...editingAiTool, isActive: e.target.checked})}
+                    className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
+                  />
+                  <label className="text-sm font-medium text-white">Active (Visible to users)</label>
+                </div>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-8">
+              <button 
+                onClick={() => {
+                  setShowAiToolForm(false);
+                  setEditingAiTool(null);
+                }}
+                className="flex-1 py-2 rounded-xl font-semibold bg-[#22283A] text-white hover:bg-[#2A3143] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  if (!editingAiTool.title || !editingAiTool.model) {
+                    alert("Title and Model are required.");
+                    return;
+                  }
+                  try {
+                    const dataToSave = Object.fromEntries(Object.entries(editingAiTool).filter(([_, v]) => v !== undefined));
+                    if (editingAiTool.id) {
+                      await updateDoc(doc(db, 'aiTools', editingAiTool.id), dataToSave);
+                    } else {
+                      await addDoc(collection(db, 'aiTools'), { ...dataToSave, createdAt: serverTimestamp() });
+                    }
+                    setShowAiToolForm(false);
+                    setEditingAiTool(null);
+                  } catch (err) {
+                    console.error("Error saving AI tool:", err);
+                    alert("Failed to save AI tool.");
+                  }
+                }}
+                className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+              >
+                Save AI Tool
               </button>
             </div>
           </div>

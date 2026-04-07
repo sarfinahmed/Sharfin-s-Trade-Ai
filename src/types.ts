@@ -11,6 +11,7 @@ export interface UserProfile {
   isBlocked: boolean;
   walletBalance?: number;
   preferredCurrency?: 'BDT' | 'USD';
+  toolLimits?: Record<string, number>;
 }
 
 export interface CreditRequest {
@@ -84,5 +85,28 @@ export interface Order {
   paymentType?: 'wallet' | 'direct';
   paymentMethodName: string;
   transactionId: string;
+  createdAt: any;
+}
+
+export interface AITool {
+  id?: string;
+  title: string;
+  description: string;
+  type: 'text_to_image' | 'image_to_image' | 'text_to_video' | 'image_to_video' | 'text_to_text';
+  apiKey?: string;
+  model: string;
+  systemPrompt: string;
+  userPromptAllowed: boolean;
+  cost: number;
+  costType: 'credit' | 'wallet';
+  defaultFreeUses: number;
+  isActive: boolean;
+  createdAt?: any;
+}
+
+export interface AIToolUsage {
+  id?: string;
+  userId: string;
+  toolId: string;
   createdAt: any;
 }
