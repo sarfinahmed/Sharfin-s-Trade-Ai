@@ -1,7 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export interface AnalysisResult {
   market: string;
   direction: "UP" | "DOWN" | "SIDEWAYS";
@@ -10,7 +8,9 @@ export interface AnalysisResult {
   insights: string;
 }
 
-export async function analyzeChart(base64Image: string, mimeType: string): Promise<AnalysisResult> {
+export async function analyzeChart(base64Image: string, mimeType: string, apiKey?: string): Promise<AnalysisResult> {
+  const ai = new GoogleGenAI({ apiKey: apiKey || process.env.GEMINI_API_KEY });
+  
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: [

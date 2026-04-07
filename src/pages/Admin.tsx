@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { UserProfile, CreditRequest, AppSettings, UsageHistory } from '../types';
-import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus } from 'lucide-react';
+import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, Product, Order } from '../types';
+import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check } from 'lucide-react';
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders'>('overview');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  
+  // Modals/Forms state
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<PaymentMethod | null>(null);
+  
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
   const [settings, setSettings] = useState<AppSettings>({
     appName: "Sharfin's AI",
     logoUrl: "",
@@ -41,11 +53,30 @@ export default function Admin() {
       }
     });
 
+    // Listen to Payment Methods
+    const unsubPayments = onSnapshot(collection(db, 'paymentMethods'), (snap) => {
+      setPaymentMethods(snap.docs.map(d => ({ ...d.data(), id: d.id } as PaymentMethod)));
+    });
+
+    // Listen to Products
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
+      setProducts(snap.docs.map(d => ({ ...d.data(), id: d.id } as Product)));
+    });
+
+    // Listen to Orders
+    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const unsubOrders = onSnapshot(qOrders, (snap) => {
+      setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+    });
+
     return () => {
       unsubUsers();
       unsubRequests();
       unsubHistory();
       unsubSettings();
+      unsubPayments();
+      unsubProducts();
+      unsubOrders();
     };
   }, []);
 
@@ -75,9 +106,15 @@ export default function Admin() {
       if (action === 'approved') {
         const userDoc = users.find(u => u.uid === request.userId);
         if (userDoc) {
-          await updateDoc(doc(db, 'users', request.userId), {
-            credits: (userDoc.credits || 0) + request.amount
-          });
+          if (request.type === 'money') {
+            await updateDoc(doc(db, 'users', request.userId), {
+              walletBalance: (userDoc.walletBalance || 0) + request.amount
+            });
+          } else {
+            await updateDoc(doc(db, 'users', request.userId), {
+              credits: (userDoc.credits || 0) + request.amount
+            });
+          }
         }
       }
     } catch (err) {
@@ -104,34 +141,56 @@ export default function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0E14] text-white font-sans flex">
+    <div className="min-h-screen bg-[#0B0E14] text-white font-sans flex flex-col md:flex-row">
       {/* Sidebar */}
-      <div className="w-64 bg-[#131722] border-r border-[#22283A] p-6 flex flex-col">
-        <h2 className="text-xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-[#8B5CF6] to-[#3B82F6]">Admin Panel</h2>
-        <nav className="space-y-2 flex-grow">
-          <button onClick={() => setActiveTab('overview')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'overview' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+      <div className="w-full md:w-64 bg-[#131722] border-r border-[#22283A] p-4 md:p-6 flex flex-col shrink-0">
+        <h2 className="text-xl font-bold mb-4 md:mb-8 text-transparent bg-clip-text bg-gradient-to-r from-[#8B5CF6] to-[#3B82F6]">Admin Panel</h2>
+        <nav className="flex overflow-x-auto md:flex-col space-x-2 md:space-x-0 md:space-y-2 flex-grow pb-2 md:pb-0 custom-scrollbar">
+          <button onClick={() => setActiveTab('overview')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'overview' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <LayoutDashboard className="w-5 h-5" />
-            <span>Overview</span>
+            <span className="hidden md:inline">Overview</span>
           </button>
-          <button onClick={() => setActiveTab('users')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'users' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+          <button onClick={() => setActiveTab('users')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'users' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <Users className="w-5 h-5" />
-            <span>Users</span>
+            <span className="hidden md:inline">Users</span>
           </button>
-          <button onClick={() => setActiveTab('requests')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'requests' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+          <button onClick={() => setActiveTab('requests')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'requests' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <CreditCard className="w-5 h-5" />
-            <span>Credit Requests</span>
+            <span className="hidden md:inline">Deposit Requests</span>
           </button>
-          <button onClick={() => setActiveTab('history')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'history' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+          <button onClick={() => setActiveTab('history')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'history' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <Activity className="w-5 h-5" />
-            <span>Usage History</span>
+            <span className="hidden md:inline">Usage History</span>
           </button>
-          <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+          
+          <div className="hidden md:block pt-4 pb-2">
+            <p className="px-4 text-xs font-semibold text-[#8A93A6] uppercase tracking-wider">Store & Billing</p>
+          </div>
+          
+          <button onClick={() => setActiveTab('payments')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'payments' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <Wallet className="w-5 h-5" />
+            <span className="hidden md:inline">Payment Methods</span>
+          </button>
+          <button onClick={() => setActiveTab('store')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'store' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <ShoppingBag className="w-5 h-5" />
+            <span className="hidden md:inline">Products & Offers</span>
+          </button>
+          <button onClick={() => setActiveTab('orders')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'orders' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <ShoppingCart className="w-5 h-5" />
+            <span className="hidden md:inline">Store Orders</span>
+          </button>
+
+          <div className="hidden md:block pt-4 pb-2">
+            <p className="px-4 text-xs font-semibold text-[#8A93A6] uppercase tracking-wider">System</p>
+          </div>
+
+          <button onClick={() => setActiveTab('settings')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <Settings className="w-5 h-5" />
-            <span>Settings</span>
+            <span className="hidden md:inline">Settings</span>
           </button>
         </nav>
         
-        <div className="mt-auto pt-6 border-t border-[#22283A]">
+        <div className="hidden md:block mt-auto pt-6 border-t border-[#22283A]">
           <a href="/" className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-[#8A93A6] hover:bg-[#1A1F2E] hover:text-white">
             <Activity className="w-5 h-5" />
             <span>Back to App</span>
@@ -140,7 +199,7 @@ export default function Admin() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-grow p-10 overflow-y-auto">
+      <div className="flex-grow p-4 md:p-10 overflow-y-auto">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <h3 className="text-2xl font-bold">Dashboard Overview</h3>
@@ -172,20 +231,33 @@ export default function Admin() {
 
         {activeTab === 'users' && (
           <div className="space-y-6">
-            <h3 className="text-2xl font-bold">Registered Users</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h3 className="text-2xl font-bold">Registered Users</h3>
+              <div className="relative">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-[#8A93A6]" />
+                <input 
+                  type="text" 
+                  placeholder="Search by email..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="pl-10 pr-4 py-2 bg-[#131722] border border-[#22283A] rounded-xl text-white focus:outline-none focus:border-purple-500 transition-colors w-full sm:w-64"
+                />
+              </div>
+            </div>
             <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
               <table className="w-full text-left">
                 <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">Email</th>
                     <th className="px-6 py-4">Credits</th>
+                    <th className="px-6 py-4">Wallet Balance</th>
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#22283A]">
-                  {users.map(u => (
+                  {users.filter(u => u.email.toLowerCase().includes(userSearch.toLowerCase())).map(u => (
                     <tr key={u.uid} className="hover:bg-[#1A1F2E]/50 transition-colors">
                       <td className="px-6 py-4">{u.email}</td>
                       <td className="px-6 py-4">
@@ -210,6 +282,16 @@ export default function Admin() {
                           >
                             <Minus className="w-4 h-4" />
                           </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input 
+                            type="number" 
+                            value={u.walletBalance || 0}
+                            onChange={(e) => handleUpdateUser(u.uid, { walletBalance: parseInt(e.target.value) || 0 })}
+                            className="w-24 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
+                          />
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -259,6 +341,7 @@ export default function Admin() {
                 <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">User</th>
+                    <th className="px-6 py-4">Type</th>
                     <th className="px-6 py-4">Amount</th>
                     <th className="px-6 py-4">Method & TX ID</th>
                     <th className="px-6 py-4">Status</th>
@@ -269,6 +352,11 @@ export default function Admin() {
                   {requests.map(r => (
                     <tr key={r.id} className="hover:bg-[#1A1F2E]/50 transition-colors">
                       <td className="px-6 py-4">{r.userEmail}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${r.type === 'money' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
+                          {r.type === 'money' ? 'MONEY' : 'CREDIT'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 font-bold text-[#A855F7]">+{r.amount}</td>
                       <td className="px-6 py-4">
                         <div className="text-sm">{r.paymentMethod}</div>
@@ -307,7 +395,7 @@ export default function Admin() {
                   ))}
                   {requests.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-[#8A93A6]">No credit requests found.</td>
+                      <td colSpan={6} className="px-6 py-8 text-center text-[#8A93A6]">No deposit requests found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -343,6 +431,202 @@ export default function Admin() {
                   {history.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-6 py-8 text-center text-[#8A93A6]">No usage history found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'payments' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-bold">Payment Methods</h3>
+              <button 
+                onClick={() => {
+                  setEditingPayment({ name: '', details: '', instructions: '', isActive: true });
+                  setShowPaymentForm(true);
+                }}
+                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <PlusCircle className="w-5 h-5" />
+                <span>Add Method</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {paymentMethods.map(pm => (
+                <div key={pm.id} className={`bg-[#131722] border ${pm.isActive ? 'border-purple-500/50' : 'border-[#22283A]'} rounded-2xl p-6 relative`}>
+                  <div className="absolute top-4 right-4 flex space-x-2">
+                    <button 
+                      onClick={() => { setEditingPayment(pm); setShowPaymentForm(true); }}
+                      className="p-2 bg-[#22283A] hover:bg-[#2A3143] rounded-lg transition-colors"
+                    >
+                      <Edit className="w-4 h-4 text-[#8A93A6]" />
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (window.confirm('Delete this payment method?')) {
+                          await deleteDoc(doc(db, 'paymentMethods', pm.id!));
+                        }
+                      }}
+                      className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
+                  <h4 className="text-xl font-bold text-white mb-2">{pm.name}</h4>
+                  <div className="space-y-2 text-sm text-[#8A93A6]">
+                    <p><strong className="text-white">Details:</strong> {pm.details}</p>
+                    <p><strong className="text-white">Instructions:</strong> {pm.instructions}</p>
+                    <p><strong className="text-white">Status:</strong> {pm.isActive ? <span className="text-green-400">Active</span> : <span className="text-red-400">Inactive</span>}</p>
+                  </div>
+                </div>
+              ))}
+              {paymentMethods.length === 0 && (
+                <div className="col-span-full text-center py-10 text-[#8A93A6]">
+                  No payment methods added yet.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'store' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-bold">Products & Offers</h3>
+              <button 
+                onClick={() => {
+                  setEditingProduct({ title: '', description: '', priceDisplay: '', category: 'game_topup', requirements: [], conditions: '', isActive: true });
+                  setShowProductForm(true);
+                }}
+                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <PlusCircle className="w-5 h-5" />
+                <span>Add Product</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {products.map(p => (
+                <div key={p.id} className={`bg-[#131722] border ${p.isActive ? 'border-purple-500/50' : 'border-[#22283A]'} rounded-2xl p-6 relative flex flex-col`}>
+                  <div className="absolute top-4 right-4 flex space-x-2">
+                    <button 
+                      onClick={() => { setEditingProduct(p); setShowProductForm(true); }}
+                      className="p-2 bg-[#22283A] hover:bg-[#2A3143] rounded-lg transition-colors"
+                    >
+                      <Edit className="w-4 h-4 text-[#8A93A6]" />
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (window.confirm('Delete this product?')) {
+                          await deleteDoc(doc(db, 'products', p.id!));
+                        }
+                      }}
+                      className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">{p.category.replace('_', ' ')}</span>
+                  <h4 className="text-xl font-bold text-white mb-1">{p.title}</h4>
+                  <p className="text-2xl font-bold text-green-400 mb-4">{p.priceDisplay}</p>
+                  <p className="text-sm text-[#8A93A6] mb-4 flex-grow">{p.description}</p>
+                  <div className="text-xs text-[#8A93A6] space-y-1">
+                    <p><strong className="text-white">Requires:</strong> {p.requirements.join(', ') || 'None'}</p>
+                    <p><strong className="text-white">Status:</strong> {p.isActive ? <span className="text-green-400">Active</span> : <span className="text-red-400">Inactive</span>}</p>
+                  </div>
+                </div>
+              ))}
+              {products.length === 0 && (
+                <div className="col-span-full text-center py-10 text-[#8A93A6]">
+                  No products added yet.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'orders' && (
+          <div className="space-y-6">
+            <h3 className="text-2xl font-bold">Store Orders</h3>
+            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4">User</th>
+                    <th className="px-6 py-4">Product</th>
+                    <th className="px-6 py-4">Details</th>
+                    <th className="px-6 py-4">Payment</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#22283A]">
+                  {orders.map(o => (
+                    <tr key={o.id} className="hover:bg-[#1A1F2E]/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-white">{o.userEmail}</div>
+                        <div className="text-xs text-[#8A93A6]">{o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString() : ''}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-bold text-white">{o.productTitle}</div>
+                        <div className="text-xs text-green-400">{o.priceDisplay}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-[#8A93A6] space-y-1">
+                          {Object.entries(o.userInputs || {}).map(([k, v]) => (
+                            <div key={k}><strong className="text-white">{k}:</strong> {v}</div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-[#8A93A6]">
+                          <strong className="text-white">{o.paymentMethodName}</strong><br/>
+                          <span className="text-purple-400">{o.paymentType === 'wallet' ? 'WALLET' : 'DIRECT'}</span><br/>
+                          TX: <span className="font-mono text-purple-400">{o.transactionId}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          o.status === 'approved' || o.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                          o.status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                          'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {o.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {o.status === 'pending' && (
+                          <div className="flex space-x-2">
+                            <button 
+                              onClick={async () => {
+                                await updateDoc(doc(db, 'orders', o.id!), { status: 'completed' });
+                              }}
+                              className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded transition-colors"
+                              title="Complete Order"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                await updateDoc(doc(db, 'orders', o.id!), { status: 'rejected' });
+                              }}
+                              className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
+                              title="Reject Order"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {orders.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-[#8A93A6]">No orders found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -409,6 +693,83 @@ export default function Admin() {
                 />
               </div>
 
+              <div className="pt-4 border-t border-[#22283A]">
+                <h4 className="text-lg font-semibold mb-4 text-white">Support & Promo</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">Promo Banner Image URL (300x250 recommended)</label>
+                    <input 
+                      type="text" 
+                      value={settings.promoBannerUrl || ''}
+                      onChange={(e) => setSettings({...settings, promoBannerUrl: e.target.value})}
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                      placeholder="https://example.com/banner.png"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">Telegram Link</label>
+                    <input 
+                      type="text" 
+                      value={settings.supportTelegram || ''}
+                      onChange={(e) => setSettings({...settings, supportTelegram: e.target.value})}
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">WhatsApp Link</label>
+                    <input 
+                      type="text" 
+                      value={settings.supportWhatsapp || ''}
+                      onChange={(e) => setSettings({...settings, supportWhatsapp: e.target.value})}
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">Support Phone Number</label>
+                    <input 
+                      type="text" 
+                      value={settings.supportPhone || ''}
+                      onChange={(e) => setSettings({...settings, supportPhone: e.target.value})}
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#22283A]">
+                <h4 className="text-lg font-semibold mb-4 text-white">Advanced Settings</h4>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#8A93A6] mb-2">Custom Gemini API Key (Optional)</label>
+                    <input 
+                      type="password" 
+                      value={settings.geminiApiKey || ''}
+                      onChange={(e) => setSettings({...settings, geminiApiKey: e.target.value})}
+                      placeholder="Leave empty to use default system key"
+                      className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors font-mono text-sm"
+                    />
+                    <p className="text-xs text-[#8A93A6] mt-2">If provided, this key will be used for all AI chart analysis instead of the default one.</p>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-[#0B0E14] border border-[#22283A] rounded-xl p-4">
+                    <div>
+                      <h5 className="font-medium text-white">Maintenance Mode</h5>
+                      <p className="text-sm text-[#8A93A6]">Disable access for regular users</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={settings.maintenanceMode || false}
+                        onChange={(e) => setSettings({...settings, maintenanceMode: e.target.checked})}
+                      />
+                      <div className="w-11 h-6 bg-[#22283A] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <button 
                 onClick={handleSaveSettings}
                 className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90"
@@ -420,6 +781,225 @@ export default function Admin() {
           </div>
         )}
       </div>
+
+      {/* Payment Method Form Modal */}
+      {showPaymentForm && editingPayment && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-white mb-6">{editingPayment.id ? 'Edit' : 'Add'} Payment Method</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Method Name (e.g. bKash, Binance)</label>
+                <input 
+                  type="text" 
+                  value={editingPayment.name}
+                  onChange={(e) => setEditingPayment({...editingPayment, name: e.target.value})}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Details (Number/Address)</label>
+                <input 
+                  type="text" 
+                  value={editingPayment.details}
+                  onChange={(e) => setEditingPayment({...editingPayment, details: e.target.value})}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Instructions for User</label>
+                <textarea 
+                  value={editingPayment.instructions}
+                  onChange={(e) => setEditingPayment({...editingPayment, instructions: e.target.value})}
+                  rows={2}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">QR Code Image URL (Optional)</label>
+                <input 
+                  type="text" 
+                  value={editingPayment.qrCodeUrl || ''}
+                  onChange={(e) => setEditingPayment({...editingPayment, qrCodeUrl: e.target.value})}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  placeholder="https://example.com/qr.png"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  checked={editingPayment.isActive}
+                  onChange={(e) => setEditingPayment({...editingPayment, isActive: e.target.checked})}
+                  className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
+                />
+                <label className="text-sm font-medium text-white">Active (Visible to users)</label>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-8">
+              <button 
+                onClick={() => setShowPaymentForm(false)}
+                className="flex-1 py-2.5 rounded-xl font-medium border border-[#22283A] text-white hover:bg-[#1A1F2E] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    if (editingPayment.id) {
+                      await updateDoc(doc(db, 'paymentMethods', editingPayment.id), { ...editingPayment });
+                    } else {
+                      await addDoc(collection(db, 'paymentMethods'), { ...editingPayment });
+                    }
+                    setShowPaymentForm(false);
+                  } catch (err) {
+                    console.error(err);
+                    alert("Failed to save payment method.");
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Form Modal */}
+      {showProductForm && editingProduct && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-white mb-6">{editingProduct.id ? 'Edit' : 'Add'} Product/Offer</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Title</label>
+                  <input 
+                    type="text" 
+                    value={editingProduct.title}
+                    onChange={(e) => setEditingProduct({...editingProduct, title: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Category</label>
+                  <select 
+                    value={editingProduct.category}
+                    onChange={(e) => setEditingProduct({...editingProduct, category: e.target.value as any})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="game_topup">Game Top-up</option>
+                    <option value="subscription">Subscription</option>
+                    <option value="product">Digital Product</option>
+                    <option value="offer">Offer</option>
+                    <option value="others">Others</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Price Display (e.g. "500 BDT")</label>
+                  <input 
+                    type="text" 
+                    value={editingProduct.priceDisplay}
+                    onChange={(e) => setEditingProduct({...editingProduct, priceDisplay: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Numeric Price (for Wallet)</label>
+                  <input 
+                    type="number" 
+                    value={editingProduct.price || 0}
+                    onChange={(e) => setEditingProduct({...editingProduct, price: parseInt(e.target.value) || 0})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Image URL (Optional)</label>
+                <input 
+                  type="text" 
+                  value={editingProduct.imageUrl || ''}
+                  onChange={(e) => setEditingProduct({...editingProduct, imageUrl: e.target.value})}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  placeholder="https://example.com/product.png"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Description</label>
+                <textarea 
+                  value={editingProduct.description}
+                  onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})}
+                  rows={2}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Requirements (Comma separated, e.g. "Player ID, Server")</label>
+                <input 
+                  type="text" 
+                  value={editingProduct.requirements.join(', ')}
+                  onChange={(e) => setEditingProduct({...editingProduct, requirements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  placeholder="What user needs to provide"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Conditions / Notes</label>
+                <textarea 
+                  value={editingProduct.conditions}
+                  onChange={(e) => setEditingProduct({...editingProduct, conditions: e.target.value})}
+                  rows={2}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  checked={editingProduct.isActive}
+                  onChange={(e) => setEditingProduct({...editingProduct, isActive: e.target.checked})}
+                  className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
+                />
+                <label className="text-sm font-medium text-white">Active (Visible to users)</label>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-8">
+              <button 
+                onClick={() => setShowProductForm(false)}
+                className="flex-1 py-2.5 rounded-xl font-medium border border-[#22283A] text-white hover:bg-[#1A1F2E] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    const dataToSave = { ...editingProduct, createdAt: serverTimestamp() };
+                    if (editingProduct.id) {
+                      await updateDoc(doc(db, 'products', editingProduct.id), dataToSave);
+                    } else {
+                      await addDoc(collection(db, 'products'), dataToSave);
+                    }
+                    setShowProductForm(false);
+                  } catch (err) {
+                    console.error(err);
+                    alert("Failed to save product.");
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

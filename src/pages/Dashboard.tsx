@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell, ShoppingBag, Gamepad2, Package, CheckCircle2 } from 'lucide-react';
 import { analyzeChart, AnalysisResult } from '../lib/gemini';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { UserProfile, AppSettings } from '../types';
+import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { UserProfile, AppSettings, PaymentMethod, Product } from '../types';
 import ProfileSettingsModal from '../components/ProfileSettingsModal';
 
 interface DashboardProps {
@@ -30,17 +30,50 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   // Profile Settings State
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Store & Payments State
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [activeTab, setActiveTab] = useState<'chart' | 'offer' | 'game_topup' | 'subscription' | 'product' | 'others' | 'support'>('chart');
+  const [depositType, setDepositType] = useState<'credit' | 'money'>('credit');
+  const [depositAmount, setDepositAmount] = useState(10);
+  
+  // Store Purchase Modal State
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [orderInputs, setOrderInputs] = useState<Record<string, string>>({});
+  const [orderTxId, setOrderTxId] = useState('');
+  const [orderPaymentMethod, setOrderPaymentMethod] = useState('');
+  const [orderPaymentType, setOrderPaymentType] = useState<'wallet' | 'direct'>('direct');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+
   // Copy State
   const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const walletAddress = "0xf80301082ed117e7cb16a40d44924df083a27e11";
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(walletAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = (text: string, id: string = 'default') => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const qPayments = query(collection(db, 'paymentMethods'), where('isActive', '==', true));
+    const unsubPayments = onSnapshot(qPayments, (snap) => {
+      setPaymentMethods(snap.docs.map(d => ({ ...d.data(), id: d.id } as PaymentMethod)));
+    });
+
+    const qProducts = query(collection(db, 'products'), where('isActive', '==', true));
+    const unsubProducts = onSnapshot(qProducts, (snap) => {
+      setProducts(snap.docs.map(d => ({ ...d.data(), id: d.id } as Product)));
+    });
+
+    return () => {
+      unsubPayments();
+      unsubProducts();
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -94,7 +127,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       const mimeType = match[1];
       const base64Data = match[2];
       
-      const analysis = await analyzeChart(base64Data, mimeType);
+      const analysis = await analyzeChart(base64Data, mimeType, appSettings.geminiApiKey);
       
       // Deduct Credit
       const userRef = doc(db, 'users', userProfile.uid);
@@ -129,15 +162,17 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       await addDoc(collection(db, 'creditRequests'), {
         userId: userProfile.uid,
         userEmail: userProfile.email,
-        amount: creditAmount,
+        amount: depositAmount,
         status: 'pending',
-        paymentMethod: appSettings.paymentMethodInfo,
+        paymentMethod: orderPaymentMethod,
         transactionId: txId,
+        type: depositType,
         createdAt: serverTimestamp()
       });
-      alert("Credit request submitted successfully! Waiting for admin approval.");
+      alert(`${depositType === 'credit' ? 'Credit' : 'Deposit'} request submitted successfully! Waiting for admin approval.`);
       setShowCreditModal(false);
       setTxId('');
+      setOrderPaymentMethod('');
     } catch (err) {
       console.error("Error submitting request:", err);
       alert("Failed to submit request.");
@@ -145,6 +180,19 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       setIsSubmittingRequest(false);
     }
   };
+
+  if (appSettings.maintenanceMode && userProfile.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-[#0B0E14] text-white flex flex-col items-center justify-center p-4">
+        <div className="bg-[#131722] border border-yellow-500/30 rounded-2xl p-8 max-w-md text-center">
+          <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Maintenance Mode</h2>
+          <p className="text-[#8A93A6] mb-6">We are currently upgrading our systems to serve you better. Please check back later.</p>
+          <button onClick={handleLogout} className="px-6 py-2 bg-[#1A1F2E] hover:bg-[#22283A] rounded-lg transition-colors">Sign Out</button>
+        </div>
+      </div>
+    );
+  }
 
   if (userProfile.isBlocked) {
     return (
@@ -169,63 +217,86 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold flex items-center space-x-2">
                 <CreditCard className="w-5 h-5 text-[#A855F7]" />
-                <span>Purchase Credits</span>
+                <span>Deposit Funds</span>
               </h3>
               <button onClick={() => setShowCreditModal(false)} className="text-[#8A93A6] hover:text-white">✕</button>
             </div>
             
-            <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-5 mb-6 text-center">
-              <h4 className="text-lg font-semibold text-white mb-1">Deposit USDT to Binance</h4>
-              <p className="text-sm text-[#8A93A6] mb-4">1 Credit = 1 USDT</p>
-              
-              <div className="bg-white p-4 rounded-xl inline-block mb-4">
-                {/* Generic QR Code Placeholder */}
-                <div className="w-40 h-40 bg-gray-200 flex items-center justify-center rounded-lg border-4 border-white">
-                  <div className="text-center">
-                    <div className="w-10 h-10 bg-[#26A17B] rounded-full flex items-center justify-center mx-auto mb-2">
-                      <span className="text-white font-bold text-xl">₮</span>
-                    </div>
-                    <span className="text-xs text-gray-500 font-semibold">USDT (ERC20)</span>
-                  </div>
-                </div>
-              </div>
+            <div className="flex space-x-2 mb-6">
+              <button
+                onClick={() => setDepositType('credit')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${depositType === 'credit' ? 'bg-purple-600 text-white' : 'bg-[#1A1F2E] text-[#8A93A6] hover:text-white'}`}
+              >
+                Buy Credits
+              </button>
+              <button
+                onClick={() => setDepositType('money')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${depositType === 'money' ? 'bg-purple-600 text-white' : 'bg-[#1A1F2E] text-[#8A93A6] hover:text-white'}`}
+              >
+                Add to Wallet
+              </button>
+            </div>
 
-              <div className="space-y-3 text-left">
-                <div className="flex justify-between items-center border-b border-[#22283A] pb-2">
-                  <span className="text-sm text-[#8A93A6]">Network</span>
-                  <span className="text-sm font-bold text-white">ETH (ERC20)</span>
-                </div>
-                
-                <div className="pt-1">
-                  <span className="text-sm text-[#8A93A6] block mb-1">Address</span>
-                  <div className="flex items-center justify-between bg-[#1A1F2E] p-3 rounded-lg border border-[#22283A]">
-                    <span className="text-xs font-mono text-[#A855F7] break-all mr-2">
-                      {walletAddress}
-                    </span>
-                    <button 
-                      onClick={handleCopy}
-                      className="p-2 bg-[#22283A] hover:bg-[#2A3143] rounded-md transition-colors shrink-0"
-                      title="Copy Address"
-                    >
-                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-white" />}
-                    </button>
+            <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-5 mb-6 text-center">
+              <h4 className="text-lg font-semibold text-white mb-1">Select Payment Method</h4>
+              <p className="text-sm text-[#8A93A6] mb-4">
+                {depositType === 'credit' ? '1 Credit = 1 Unit (USD/BDT)' : 'Deposit money to your wallet'}
+              </p>
+              
+              <div className="space-y-3 text-left max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                {paymentMethods.map(pm => (
+                  <div key={pm.id} className="bg-[#1A1F2E] p-3 rounded-lg border border-[#22283A]">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-bold text-white">{pm.name}</span>
+                      <button 
+                        onClick={() => handleCopy(pm.details, pm.id!)}
+                        className="p-1.5 bg-[#22283A] hover:bg-[#2A3143] rounded-md transition-colors flex items-center space-x-1"
+                        title="Copy Details"
+                      >
+                        {copiedId === pm.id ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-[#8A93A6]" />}
+                        <span className="text-xs text-[#8A93A6]">{copiedId === pm.id ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <p className="text-xs font-mono text-purple-400 break-all mb-2">{pm.details}</p>
+                    <p className="text-xs text-[#8A93A6] mb-2">{pm.instructions}</p>
+                    {pm.qrCodeUrl && (
+                      <img src={pm.qrCodeUrl} alt="QR Code" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
+                    )}
                   </div>
-                  <p className="text-[10px] text-red-400 mt-2 text-center">Don't send NFTs to this address.</p>
-                </div>
+                ))}
+                {paymentMethods.length === 0 && (
+                  <p className="text-sm text-center text-red-400 py-2">No active payment methods available.</p>
+                )}
               </div>
             </div>
 
             <form onSubmit={handleSubmitCreditRequest} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Amount of Credits (USDT Sent)</label>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">
+                  {depositType === 'credit' ? 'Amount of Credits' : 'Amount to Deposit'}
+                </label>
                 <input 
                   type="number" 
                   min="1"
-                  value={creditAmount}
-                  onChange={(e) => setCreditAmount(parseInt(e.target.value) || 1)}
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(parseInt(e.target.value) || 0)}
                   className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Payment Method Used</label>
+                <select
+                  value={orderPaymentMethod}
+                  onChange={(e) => setOrderPaymentMethod(e.target.value)}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                  required
+                >
+                  <option value="">Select Method</option>
+                  {paymentMethods.map(pm => (
+                    <option key={pm.id} value={pm.name}>{pm.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">Transaction ID / Hash</label>
@@ -233,18 +304,213 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   type="text" 
                   value={txId}
                   onChange={(e) => setTxId(e.target.value)}
-                  placeholder="Enter TX ID after payment"
-                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                  placeholder="Enter TX ID after sending"
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors font-mono text-sm"
                   required
                 />
               </div>
-              <button
+              <button 
                 type="submit"
-                disabled={isSubmittingRequest || !txId.trim()}
-                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90 disabled:opacity-50"
+                disabled={isSubmittingRequest || !txId.trim() || !orderPaymentMethod}
+                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
               >
                 {isSubmittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 <span>Submit Request</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Product Purchase Modal */}
+      {selectedProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl my-8">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold flex items-center space-x-2">
+                <ShoppingBag className="w-5 h-5 text-[#A855F7]" />
+                <span>Purchase Product</span>
+              </h3>
+              <button onClick={() => setSelectedProduct(null)} className="text-[#8A93A6] hover:text-white">✕</button>
+            </div>
+
+            <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-5 mb-6">
+              <h4 className="text-lg font-bold text-white mb-1">{selectedProduct.title}</h4>
+              <p className="text-2xl font-bold text-green-400 mb-4">{selectedProduct.priceDisplay}</p>
+              {selectedProduct.conditions && (
+                <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
+                  <p className="text-xs text-yellow-500 flex items-start">
+                    <AlertCircle className="w-4 h-4 mr-1.5 shrink-0 mt-0.5" />
+                    <span>{selectedProduct.conditions}</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              
+              if (orderPaymentType === 'wallet') {
+                if (userProfile.walletBalance < (selectedProduct.price || 0)) {
+                  alert("Insufficient wallet balance.");
+                  return;
+                }
+              } else {
+                if (!orderTxId.trim() || !orderPaymentMethod) return;
+              }
+              
+              setIsSubmittingOrder(true);
+              try {
+                // Deduct from wallet if applicable
+                if (orderPaymentType === 'wallet') {
+                  const userRef = doc(db, 'users', userProfile.uid);
+                  await updateDoc(userRef, {
+                    walletBalance: userProfile.walletBalance - (selectedProduct.price || 0)
+                  });
+                }
+
+                await addDoc(collection(db, 'orders'), {
+                  userId: userProfile.uid,
+                  userEmail: userProfile.email,
+                  productId: selectedProduct.id,
+                  productTitle: selectedProduct.title,
+                  priceDisplay: selectedProduct.priceDisplay,
+                  price: selectedProduct.price || 0,
+                  userInputs: orderInputs,
+                  paymentMethodName: orderPaymentType === 'wallet' ? 'Wallet Balance' : orderPaymentMethod,
+                  paymentType: orderPaymentType,
+                  transactionId: orderPaymentType === 'wallet' ? 'WALLET_PAYMENT' : orderTxId,
+                  status: orderPaymentType === 'wallet' ? 'completed' : 'pending',
+                  createdAt: serverTimestamp()
+                });
+                alert("Order placed successfully! You can track it in your profile.");
+                setSelectedProduct(null);
+              } catch (err) {
+                console.error("Error placing order:", err);
+                alert("Failed to place order.");
+              } finally {
+                setIsSubmittingOrder(false);
+              }
+            }} className="space-y-4">
+              
+              {selectedProduct.requirements.length > 0 && (
+                <div className="space-y-4 pt-2 border-t border-[#22283A]">
+                  <h5 className="font-semibold text-white text-sm">Required Information</h5>
+                  {selectedProduct.requirements.map((req, idx) => (
+                    <div key={idx}>
+                      <label className="block text-sm font-medium text-[#8A93A6] mb-2">{req}</label>
+                      <input 
+                        type="text" 
+                        value={orderInputs[req] || ''}
+                        onChange={(e) => setOrderInputs({...orderInputs, [req]: e.target.value})}
+                        className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                        required
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-4 pt-4 border-t border-[#22283A]">
+                <h5 className="font-semibold text-white text-sm">Payment Details</h5>
+                
+                <div className="flex space-x-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setOrderPaymentType('wallet')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${orderPaymentType === 'wallet' ? 'bg-purple-600 text-white' : 'bg-[#1A1F2E] text-[#8A93A6] hover:text-white'}`}
+                  >
+                    Pay with Wallet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderPaymentType('direct')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${orderPaymentType === 'direct' ? 'bg-purple-600 text-white' : 'bg-[#1A1F2E] text-[#8A93A6] hover:text-white'}`}
+                  >
+                    Direct Payment
+                  </button>
+                </div>
+
+                {orderPaymentType === 'wallet' ? (
+                  <div className="bg-[#1A1F2E] p-4 rounded-xl border border-[#22283A]">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[#8A93A6]">Wallet Balance:</span>
+                      <span className="font-bold text-white">{userProfile.walletBalance} {userProfile.preferredCurrency}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[#8A93A6]">Product Price:</span>
+                      <span className="font-bold text-green-400">{selectedProduct.price} {userProfile.preferredCurrency}</span>
+                    </div>
+                    {userProfile.walletBalance < (selectedProduct.price || 0) && (
+                      <p className="text-red-400 text-sm mt-4">Insufficient balance. Please deposit funds.</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-[#8A93A6] mb-2">Select Payment Method</label>
+                      <select
+                        value={orderPaymentMethod}
+                        onChange={(e) => setOrderPaymentMethod(e.target.value)}
+                        className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                        required
+                      >
+                        <option value="">Select Method</option>
+                        {paymentMethods.map(pm => (
+                          <option key={pm.id} value={pm.name}>{pm.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {orderPaymentMethod && (
+                      <div className="bg-[#1A1F2E] p-4 rounded-xl border border-[#22283A]">
+                        {paymentMethods.filter(pm => pm.name === orderPaymentMethod).map(pm => (
+                          <div key={pm.id}>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm font-bold text-white">Send to:</span>
+                              <button 
+                                type="button"
+                                onClick={() => handleCopy(pm.details, `order_${pm.id}`)}
+                                className="p-1.5 bg-[#22283A] hover:bg-[#2A3143] rounded-md transition-colors flex items-center space-x-1"
+                              >
+                                {copiedId === `order_${pm.id}` ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-[#8A93A6]" />}
+                                <span className="text-xs text-[#8A93A6]">{copiedId === `order_${pm.id}` ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            </div>
+                            <p className="text-sm font-mono text-purple-400 break-all mb-2">{pm.details}</p>
+                            <p className="text-xs text-[#8A93A6] mb-2">{pm.instructions}</p>
+                            {pm.qrCodeUrl && (
+                              <img src={pm.qrCodeUrl} alt="QR Code" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-[#8A93A6] mb-2">Transaction ID / Hash</label>
+                      <input 
+                        type="text" 
+                        value={orderTxId}
+                        onChange={(e) => setOrderTxId(e.target.value)}
+                        placeholder="Enter TX ID after payment"
+                        className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors font-mono text-sm"
+                        required
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <button 
+                type="submit"
+                disabled={isSubmittingOrder || !orderTxId.trim() || !orderPaymentMethod || selectedProduct.requirements.some(req => !orderInputs[req]?.trim())}
+                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+              >
+                {isSubmittingOrder ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                <span>Place Order</span>
               </button>
             </form>
           </div>
@@ -258,7 +524,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
       <div className="max-w-6xl mx-auto px-6 py-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="flex items-center justify-between mb-10">
+        <header className="flex flex-col sm:flex-row items-center justify-between mb-10 space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4">
             {appSettings.logoUrl ? (
               <img src={appSettings.logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover" />
@@ -273,13 +539,38 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             </div>
           </div>
           
-          <div className="flex items-center space-x-4">
-            <div className="hidden sm:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-4 py-2 rounded-lg">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:space-x-4 sm:gap-0">
+            <button 
+              onClick={async () => {
+                const newCurrency = userProfile.preferredCurrency === 'BDT' ? 'USD' : 'BDT';
+                await updateDoc(doc(db, 'users', userProfile.uid), { preferredCurrency: newCurrency });
+              }}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-bold text-white"
+            >
+              {userProfile.preferredCurrency}
+            </button>
+            <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <Zap className="w-4 h-4 text-[#F59E0B]" />
-              <span className="text-sm font-bold text-white">{userProfile.credits} Credits</span>
+              <span className="text-sm font-bold text-white">{userProfile.credits} <span className="hidden sm:inline">Credits</span></span>
               <button 
-                onClick={() => setShowCreditModal(true)}
-                className="ml-2 text-xs bg-[#22283A] hover:bg-[#2A3143] px-2 py-1 rounded text-white transition-colors"
+                onClick={() => {
+                  setDepositType('credit');
+                  setShowCreditModal(true);
+                }}
+                className="ml-1 sm:ml-2 text-xs bg-[#22283A] hover:bg-[#2A3143] px-2 py-1 rounded text-white transition-colors"
+              >
+                Add
+              </button>
+            </div>
+            <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
+              <CreditCard className="w-4 h-4 text-green-400" />
+              <span className="text-sm font-bold text-white">{userProfile.walletBalance} <span className="hidden sm:inline">{userProfile.preferredCurrency}</span></span>
+              <button 
+                onClick={() => {
+                  setDepositType('money');
+                  setShowCreditModal(true);
+                }}
+                className="ml-1 sm:ml-2 text-xs bg-[#22283A] hover:bg-[#2A3143] px-2 py-1 rounded text-white transition-colors"
               >
                 Add
               </button>
@@ -288,22 +579,37 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             {userProfile.role === 'admin' && (
               <button 
                 onClick={() => navigate('/admin')}
-                className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
+                className="flex items-center space-x-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
               >
                 <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">Admin Panel</span>
+                <span className="hidden sm:inline">Admin</span>
               </button>
             )}
 
             <button 
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center space-x-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">Profile</span>
+            </button>
+
+            <button 
               onClick={handleLogout}
-              className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
+              className="flex items-center space-x-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-medium text-[#8A93A6] hover:text-white"
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </header>
+
+        {/* Promo Banner */}
+        {appSettings.promoBannerUrl && (
+          <div className="mb-8 rounded-2xl overflow-hidden border border-[#22283A] max-w-[300px] mx-auto sm:max-w-full sm:h-[250px]">
+            <img src={appSettings.promoBannerUrl} alt="Promo Banner" className="w-full h-full object-cover" />
+          </div>
+        )}
 
         {/* Global Notice Banner */}
         {appSettings.globalNotice && (
@@ -313,10 +619,37 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
           </div>
         )}
 
+        {/* Tabs Navigation */}
+        <div className="flex overflow-x-auto custom-scrollbar space-x-2 mb-8 pb-2">
+          {[
+            { id: 'chart', label: 'Chart Analysis', icon: BarChart2 },
+            { id: 'offer', label: 'Offers', icon: ShoppingBag },
+            { id: 'game_topup', label: 'Game Top-up', icon: Gamepad2 },
+            { id: 'subscription', label: 'Subscriptions', icon: Activity },
+            { id: 'product', label: 'Digital Products', icon: Package },
+            { id: 'others', label: 'Others', icon: Package },
+            { id: 'support', label: 'Support', icon: AlertCircle }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === tab.id 
+                  ? 'bg-purple-600 text-white' 
+                  : 'bg-[#131722] border border-[#22283A] text-[#8A93A6] hover:text-white hover:bg-[#1A1F2E]'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
         <main className="flex-grow flex flex-col w-full">
-          <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            {/* Left Column: Image Input */}
+          {activeTab === 'chart' && (
+            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Column: Image Input */}
             <div className="lg:col-span-5 flex flex-col">
               <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 flex flex-col h-full">
                 <div className="flex items-center justify-between mb-5">
@@ -480,6 +813,82 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               )}
             </div>
           </div>
+          )}
+
+          {(activeTab === 'offer' || activeTab === 'game_topup' || activeTab === 'subscription' || activeTab === 'product' || activeTab === 'others') && (
+            <div className="w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {products.filter(p => p.category === activeTab).map(product => (
+                  <div key={product.id} className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 flex flex-col hover:border-purple-500/50 transition-colors group">
+                    {product.imageUrl && (
+                      <div className="w-full h-40 mb-4 rounded-xl overflow-hidden bg-[#0B0E14]">
+                        <img src={product.imageUrl} alt={product.title} className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-2 mb-4">
+                      {product.category === 'game_topup' ? <Gamepad2 className="w-5 h-5 text-purple-400" /> : <Package className="w-5 h-5 text-purple-400" />}
+                      <span className="text-xs font-bold uppercase tracking-wider text-purple-400">{product.category.replace('_', ' ')}</span>
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2 group-hover:text-purple-400 transition-colors">{product.title}</h3>
+                    <p className="text-3xl font-bold text-green-400 mb-4">{product.priceDisplay}</p>
+                    <p className="text-[#8A93A6] mb-6 flex-grow">{product.description}</p>
+                    
+                    <button 
+                      onClick={() => {
+                        setSelectedProduct(product);
+                        setOrderInputs({});
+                        setOrderTxId('');
+                        setOrderPaymentMethod('');
+                      }}
+                      className="w-full py-3 rounded-xl font-semibold bg-[#22283A] hover:bg-purple-600 text-white transition-colors"
+                    >
+                      Purchase Now
+                    </button>
+                  </div>
+                ))}
+                {products.filter(p => p.category === activeTab).length === 0 && (
+                  <div className="col-span-full text-center py-12 bg-[#131722] border border-[#22283A] rounded-2xl">
+                    <ShoppingBag className="w-12 h-12 text-[#22283A] mx-auto mb-4" />
+                    <p className="text-[#8A93A6]">No items available in this category.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'support' && (
+            <div className="w-full max-w-2xl mx-auto">
+              <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-8 text-center">
+                <AlertCircle className="w-12 h-12 text-purple-500 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-white mb-2">Need Help?</h2>
+                <p className="text-[#8A93A6] mb-8">Contact our support team through any of the following channels.</p>
+                
+                <div className="space-y-4">
+                  {appSettings.supportTelegram && (
+                    <a href={appSettings.supportTelegram} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center space-x-3 w-full py-4 rounded-xl font-semibold bg-[#22283A] hover:bg-[#2A3143] text-white transition-colors">
+                      <Send className="w-5 h-5 text-[#0088cc]" />
+                      <span>Telegram Support</span>
+                    </a>
+                  )}
+                  {appSettings.supportWhatsapp && (
+                    <a href={appSettings.supportWhatsapp} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center space-x-3 w-full py-4 rounded-xl font-semibold bg-[#22283A] hover:bg-[#2A3143] text-white transition-colors">
+                      <svg className="w-5 h-5 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      <span>WhatsApp Support</span>
+                    </a>
+                  )}
+                  {appSettings.supportPhone && (
+                    <div className="flex items-center justify-center space-x-3 w-full py-4 rounded-xl font-semibold bg-[#22283A] text-white">
+                      <AlertCircle className="w-5 h-5 text-[#8A93A6]" />
+                      <span>{appSettings.supportPhone}</span>
+                    </div>
+                  )}
+                  {!appSettings.supportTelegram && !appSettings.supportWhatsapp && !appSettings.supportPhone && (
+                    <p className="text-[#8A93A6]">No support contact information available.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

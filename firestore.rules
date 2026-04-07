@@ -38,7 +38,7 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'role', 'isBlocked']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'role', 'isBlocked', 'walletBalance', 'preferredCurrency']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 255 &&
              (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
@@ -46,7 +46,9 @@ service cloud.firestore {
              data.createdAt is timestamp &&
              (!('credits' in data) || data.credits is number) &&
              (!('role' in data) || data.role in ['admin', 'user']) &&
-             (!('isBlocked' in data) || data.isBlocked is bool);
+             (!('isBlocked' in data) || data.isBlocked is bool) &&
+             (!('walletBalance' in data) || data.walletBalance is number) &&
+             (!('preferredCurrency' in data) || data.preferredCurrency in ['BDT', 'USD']);
     }
 
     // ===============================================================
@@ -59,16 +61,18 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() &&
                     (!('role' in request.resource.data) || request.resource.data.role == 'user') &&
                     (!('credits' in request.resource.data) || request.resource.data.credits == 0 || request.resource.data.credits == 5) &&
+                    (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0) &&
                     (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false);
       
       // Users can update their profile (but not role/credits/isBlocked). Admin can update anything.
-      // Also, allow users to deduct their own credits by exactly 1.
+      // Also, allow users to deduct their own credits by exactly 1, and deduct their own walletBalance.
       allow update: if (isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && 
                         request.resource.data.createdAt == resource.data.createdAt &&
                         request.resource.data.role == resource.data.role &&
                         request.resource.data.isBlocked == resource.data.isBlocked &&
                         (request.resource.data.credits == resource.data.credits || 
-                         request.resource.data.credits == resource.data.credits - 1)) 
+                         request.resource.data.credits == resource.data.credits - 1) &&
+                        (!('walletBalance' in request.resource.data) || !('walletBalance' in resource.data) || request.resource.data.walletBalance <= resource.data.walletBalance)) 
                     || isAdmin();
                     
       allow delete: if isAdmin();
@@ -87,6 +91,22 @@ service cloud.firestore {
     }
 
     match /usageHistory/{historyId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /paymentMethods/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /products/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /orders/{id} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAdmin();
