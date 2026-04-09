@@ -69,7 +69,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
     
     if (!hasFreeUse) {
       if (activeAiTool.costType === 'credit' && userProfile.credits < activeAiTool.cost) {
-        alert(`Insufficient credits. You need ${activeAiTool.cost} credits.`);
+        alert(`Insufficient Ai credits. You need ${activeAiTool.cost} Ai credits.`);
         return;
       }
       if (activeAiTool.costType === 'wallet' && (userProfile.walletBalance || 0) < activeAiTool.cost) {
@@ -400,7 +400,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 onClick={() => setDepositType('credit')}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${depositType === 'credit' ? 'bg-purple-600 text-white' : 'bg-[#1A1F2E] text-[#8A93A6] hover:text-white'}`}
               >
-                Buy Credits
+                Buy Ai Credits
               </button>
               <button
                 onClick={() => setDepositType('money')}
@@ -446,7 +446,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             <form onSubmit={handleSubmitCreditRequest} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">
-                  {depositType === 'credit' ? 'Amount of Credits' : 'Amount to Deposit'}
+                  {depositType === 'credit' ? 'Amount of Ai Credits' : 'Amount to Deposit'}
                 </label>
                 <input 
                   type="number" 
@@ -692,7 +692,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
       {/* Profile Settings Modal */}
       {showProfileModal && (
-        <ProfileSettingsModal onClose={() => setShowProfileModal(false)} />
+        <ProfileSettingsModal onClose={() => setShowProfileModal(false)} userProfile={userProfile} />
       )}
 
       <div className="max-w-6xl mx-auto px-6 py-10 min-h-screen flex flex-col">
@@ -724,7 +724,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             </button>
             <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <Zap className="w-4 h-4 text-[#F59E0B]" />
-              <span className="text-sm font-bold text-white">{userProfile.credits} <span className="hidden sm:inline">Credits</span></span>
+              <span className="text-sm font-bold text-white">{userProfile.credits} <span className="hidden sm:inline">Ai Credits</span></span>
               <button 
                 onClick={() => {
                   setDepositType('credit');
@@ -779,7 +779,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
         {/* Promo Banner */}
         {appSettings.promoBannerUrl && (
-          <div className="mb-8 rounded-2xl overflow-hidden border border-[#22283A] max-w-[300px] mx-auto sm:max-w-full sm:h-[250px]">
+          <div className="mb-8 rounded-2xl overflow-hidden border border-[#22283A] w-full h-48 sm:h-64">
             <img src={appSettings.promoBannerUrl} alt="Promo Banner" className="w-full h-full object-cover" />
           </div>
         )}

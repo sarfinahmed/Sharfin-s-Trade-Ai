@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, AlertCircle, CheckCircle2, ShoppingBag, Package, Activity } from 'lucide-react';
 import { auth, db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
-import { Order, UsageHistory } from '../types';
+import { Order, UsageHistory, UserProfile } from '../types';
 
 interface ProfileSettingsModalProps {
   onClose: () => void;
+  userProfile: UserProfile;
 }
 
-export default function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
+export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
@@ -63,6 +64,18 @@ export default function ProfileSettingsModal({ onClose }: ProfileSettingsModalPr
             </button>
           </div>
           <button onClick={onClose} className="text-[#8A93A6] hover:text-white">✕</button>
+        </div>
+
+        <div className="bg-[#0B0E14] p-4 border-b border-[#22283A] flex justify-around">
+          <div className="text-center">
+            <p className="text-[#8A93A6] text-sm mb-1">Wallet Balance</p>
+            <p className="text-xl font-bold text-green-400">{userProfile.walletBalance || 0} {userProfile.preferredCurrency || 'BDT'}</p>
+          </div>
+          <div className="w-px bg-[#22283A]"></div>
+          <div className="text-center">
+            <p className="text-[#8A93A6] text-sm mb-1">Ai Credits</p>
+            <p className="text-xl font-bold text-[#F59E0B]">{userProfile.credits || 0}</p>
+          </div>
         </div>
 
         <div className="p-6 overflow-y-auto custom-scrollbar">
@@ -122,7 +135,7 @@ export default function ProfileSettingsModal({ onClose }: ProfileSettingsModalPr
                   </div>
                   {item.creditsDeducted > 0 && (
                     <div className="text-right">
-                      <span className="text-red-400 font-bold text-sm">-{item.creditsDeducted} Credits</span>
+                      <span className="text-red-400 font-bold text-sm">-{item.creditsDeducted} Ai Credits</span>
                     </div>
                   )}
                 </div>

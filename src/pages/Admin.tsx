@@ -985,7 +985,8 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   try {
-                    const dataToSave = Object.fromEntries(Object.entries(editingPayment).filter(([_, v]) => v !== undefined));
+                    const { id, ...rest } = editingPayment;
+                    const dataToSave = Object.fromEntries(Object.entries(rest).filter(([_, v]) => v !== undefined));
                     if (editingPayment.id) {
                       await updateDoc(doc(db, 'paymentMethods', editingPayment.id), dataToSave);
                       showToast("Payment method updated successfully");
@@ -1086,7 +1087,7 @@ export default function Admin() {
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">Requirements (Comma separated, e.g. "Player ID, Server")</label>
                 <input 
                   type="text" 
-                  value={editingProduct.requirements.join(',')}
+                  value={(editingProduct.requirements || []).join(',')}
                   onChange={(e) => setEditingProduct({...editingProduct, requirements: e.target.value.split(',')})}
                   className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
                   placeholder="What user needs to provide"
@@ -1123,8 +1124,9 @@ export default function Admin() {
               <button 
                 onClick={async () => {
                   try {
-                    const cleanedRequirements = editingProduct.requirements.map(s => s.trim()).filter(Boolean);
-                    const dataToSave = Object.fromEntries(Object.entries({...editingProduct, requirements: cleanedRequirements}).filter(([_, v]) => v !== undefined));
+                    const cleanedRequirements = (editingProduct.requirements || []).map(s => s.trim()).filter(Boolean);
+                    const { id, ...rest } = editingProduct;
+                    const dataToSave = Object.fromEntries(Object.entries({...rest, requirements: cleanedRequirements}).filter(([_, v]) => v !== undefined));
                     if (editingProduct.id) {
                       await updateDoc(doc(db, 'products', editingProduct.id), dataToSave);
                       showToast("Product updated successfully");
@@ -1365,7 +1367,8 @@ export default function Admin() {
                     return;
                   }
                   try {
-                    const dataToSave = Object.fromEntries(Object.entries(editingAiTool).filter(([_, v]) => v !== undefined));
+                    const { id, ...rest } = editingAiTool;
+                    const dataToSave = Object.fromEntries(Object.entries(rest).filter(([_, v]) => v !== undefined));
                     if (editingAiTool.id) {
                       await updateDoc(doc(db, 'aiTools', editingAiTool.id), dataToSave);
                       showToast("AI tool updated successfully");
