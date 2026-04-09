@@ -36,6 +36,15 @@ export default function App() {
     return () => unsubSettings();
   }, []);
 
+  // Capture referral code from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      localStorage.setItem('referralCode', ref);
+    }
+  }, []);
+
   // Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -48,6 +57,27 @@ export default function App() {
           const userSnap = await getDoc(userRef);
           
           if (!userSnap.exists()) {
+            const refCode = localStorage.getItem('referralCode');
+            let referredBy = null;
+            let rewardAmount = 0;
+            let rewardType = 'wallet';
+
+            if (refCode) {
+              try {
+                const refSettingsDoc = await getDoc(doc(db, 'settings', 'referral'));
+                if (refSettingsDoc.exists()) {
+                  const data = refSettingsDoc.data();
+                  if (data.isActive) {
+                    referredBy = refCode;
+                    rewardAmount = data.rewardAmount || 0;
+                    rewardType = data.rewardType || 'wallet';
+                  }
+                }
+              } catch (e) {
+                console.error("Error fetching referral settings:", e);
+              }
+            }
+
             await setDoc(userRef, {
               uid: currentUser.uid,
               email: currentUser.email,
@@ -56,8 +86,24 @@ export default function App() {
               createdAt: serverTimestamp(),
               credits: 0,
               role: currentUser.email === 'piccisarfin@gmail.com' ? 'admin' : 'user',
-              isBlocked: false
+              isBlocked: false,
+              referredBy: referredBy
             });
+
+            if (referredBy) {
+              // Create referral record
+              const { collection, addDoc } = await import('firebase/firestore');
+              await addDoc(collection(db, 'referrals'), {
+                referrerId: referredBy,
+                inviteeId: currentUser.uid,
+                inviteeEmail: currentUser.email,
+                status: 'pending',
+                rewardAmount,
+                rewardType,
+                createdAt: serverTimestamp()
+              });
+              localStorage.removeItem('referralCode');
+            }
           }
           
           // Listen to user profile changes

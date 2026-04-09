@@ -35,7 +35,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [aiTools, setAiTools] = useState<AITool[]>([]);
-  const [activeTab, setActiveTab] = useState<'chart' | 'ai_tools' | 'offer' | 'game_topup' | 'subscription' | 'product' | 'others' | 'support'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'ai_tools' | 'offer' | 'game_topup' | 'subscription' | 'product' | 'others' | 'support' | 'referrals'>('chart');
   const [depositType, setDepositType] = useState<'credit' | 'money'>('credit');
   const [depositAmount, setDepositAmount] = useState(10);
   
@@ -51,6 +51,9 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [copied, setCopied] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const walletAddress = "0xf80301082ed117e7cb16a40d44924df083a27e11";
+
+  // Referrals
+  const [myReferrals, setMyReferrals] = useState<any[]>([]);
 
   // AI Tool State
   const [activeAiTool, setActiveAiTool] = useState<AITool | null>(null);
@@ -71,8 +74,13 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       if (activeAiTool.costType === 'credit' && userProfile.credits < activeAiTool.cost) {
         alert(`Insufficient Ai credits. You need ${activeAiTool.cost} Ai credits.`);
         return;
-      }
-      if (activeAiTool.costType === 'wallet' && (userProfile.walletBalance || 0) < activeAiTool.cost) {
+      } else if (['bronze', 'silver', 'gold', 'diamond'].includes(activeAiTool.costType)) {
+        const balance = userProfile.creditBalances?.[activeAiTool.costType as keyof typeof userProfile.creditBalances] || 0;
+        if (balance < activeAiTool.cost) {
+          alert(`Insufficient ${activeAiTool.costType} credits. You need ${activeAiTool.cost} ${activeAiTool.costType} credits.`);
+          return;
+        }
+      } else if (activeAiTool.costType === 'wallet' && (userProfile.walletBalance || 0) < activeAiTool.cost) {
         alert(`Insufficient wallet balance. You need ${activeAiTool.cost} ${userProfile.preferredCurrency || 'BDT'}.`);
         return;
       }
@@ -90,7 +98,10 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       } else {
         if (activeAiTool.costType === 'credit') {
           updates.credits = userProfile.credits - activeAiTool.cost;
-        } else {
+        } else if (['bronze', 'silver', 'gold', 'diamond'].includes(activeAiTool.costType)) {
+          const currentBalance = userProfile.creditBalances?.[activeAiTool.costType as keyof typeof userProfile.creditBalances] || 0;
+          updates[`creditBalances.${activeAiTool.costType}`] = currentBalance - activeAiTool.cost;
+        } else if (activeAiTool.costType === 'wallet') {
           updates.walletBalance = (userProfile.walletBalance || 0) - activeAiTool.cost;
         }
       }
@@ -241,10 +252,16 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       setAiTools(snap.docs.map(d => ({ ...d.data(), id: d.id } as AITool)));
     });
 
+    const qReferrals = query(collection(db, 'referrals'), where('referrerId', '==', userProfile.uid));
+    const unsubReferrals = onSnapshot(qReferrals, (snap) => {
+      setMyReferrals(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+
     return () => {
       unsubPayments();
       unsubProducts();
       unsubAiTools();
+      unsubReferrals();
     };
   }, []);
 
@@ -433,7 +450,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                     <p className="text-xs font-mono text-purple-400 break-all mb-2">{pm.details}</p>
                     <p className="text-xs text-[#8A93A6] mb-2">{pm.instructions}</p>
                     {pm.qrCodeUrl && (
-                      <img src={pm.qrCodeUrl} alt="QR Code" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
+                      <img src={pm.qrCodeUrl} alt="QR Code" referrerPolicy="no-referrer" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
                     )}
                   </div>
                 ))}
@@ -526,7 +543,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               e.preventDefault();
               
               if (orderPaymentType === 'wallet') {
-                if (userProfile.walletBalance < (selectedProduct.price || 0)) {
+                if ((userProfile.walletBalance || 0) < (selectedProduct.price || 0)) {
                   alert("Insufficient wallet balance.");
                   return;
                 }
@@ -540,7 +557,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 if (orderPaymentType === 'wallet') {
                   const userRef = doc(db, 'users', userProfile.uid);
                   await updateDoc(userRef, {
-                    walletBalance: userProfile.walletBalance - (selectedProduct.price || 0)
+                    walletBalance: (userProfile.walletBalance || 0) - (selectedProduct.price || 0)
                   });
                 }
 
@@ -610,13 +627,13 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   <div className="bg-[#1A1F2E] p-4 rounded-xl border border-[#22283A]">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-[#8A93A6]">Wallet Balance:</span>
-                      <span className="font-bold text-white">{userProfile.walletBalance} {userProfile.preferredCurrency}</span>
+                      <span className="font-bold text-white">{userProfile.walletBalance || 0} {userProfile.preferredCurrency}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[#8A93A6]">Product Price:</span>
                       <span className="font-bold text-green-400">{selectedProduct.price} {userProfile.preferredCurrency}</span>
                     </div>
-                    {userProfile.walletBalance < (selectedProduct.price || 0) && (
+                    {(userProfile.walletBalance || 0) < (selectedProduct.price || 0) && (
                       <p className="text-red-400 text-sm mt-4">Insufficient balance. Please deposit funds.</p>
                     )}
                   </div>
@@ -655,7 +672,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                             <p className="text-sm font-mono text-purple-400 break-all mb-2">{pm.details}</p>
                             <p className="text-xs text-[#8A93A6] mb-2">{pm.instructions}</p>
                             {pm.qrCodeUrl && (
-                              <img src={pm.qrCodeUrl} alt="QR Code" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
+                              <img src={pm.qrCodeUrl} alt="QR Code" referrerPolicy="no-referrer" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
                             )}
                           </div>
                         ))}
@@ -679,7 +696,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
               <button 
                 type="submit"
-                disabled={isSubmittingOrder || !orderTxId.trim() || !orderPaymentMethod || selectedProduct.requirements.some(req => !orderInputs[req]?.trim())}
+                disabled={isSubmittingOrder || (orderPaymentType === 'direct' && (!orderTxId.trim() || !orderPaymentMethod)) || selectedProduct.requirements.some(req => !orderInputs[req]?.trim())}
                 className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
               >
                 {isSubmittingOrder ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
@@ -700,7 +717,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         <header className="flex flex-col sm:flex-row items-center justify-between mb-10 space-y-4 sm:space-y-0">
           <div className="flex items-center space-x-4">
             {appSettings.logoUrl ? (
-              <img src={appSettings.logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover" />
+              <img src={appSettings.logoUrl} alt="Logo" referrerPolicy="no-referrer" className="w-12 h-12 rounded-xl object-cover" />
             ) : (
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#8B5CF6] to-[#3B82F6] flex items-center justify-center shadow-lg">
                 <Activity className="w-7 h-7 text-white" />
@@ -735,9 +752,29 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 Add
               </button>
             </div>
+            {userProfile.creditBalances?.bronze !== undefined && (
+              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
+                <span className="text-sm font-bold text-[#CD7F32]">{userProfile.creditBalances.bronze} <span className="hidden sm:inline">Bronze</span></span>
+              </div>
+            )}
+            {userProfile.creditBalances?.silver !== undefined && (
+              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
+                <span className="text-sm font-bold text-[#C0C0C0]">{userProfile.creditBalances.silver} <span className="hidden sm:inline">Silver</span></span>
+              </div>
+            )}
+            {userProfile.creditBalances?.gold !== undefined && (
+              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
+                <span className="text-sm font-bold text-[#FFD700]">{userProfile.creditBalances.gold} <span className="hidden sm:inline">Gold</span></span>
+              </div>
+            )}
+            {userProfile.creditBalances?.diamond !== undefined && (
+              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
+                <span className="text-sm font-bold text-[#00FFFF]">{userProfile.creditBalances.diamond} <span className="hidden sm:inline">Diamond</span></span>
+              </div>
+            )}
             <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <CreditCard className="w-4 h-4 text-green-400" />
-              <span className="text-sm font-bold text-white">{userProfile.walletBalance} <span className="hidden sm:inline">{userProfile.preferredCurrency}</span></span>
+              <span className="text-sm font-bold text-white">{userProfile.walletBalance || 0} <span className="hidden sm:inline">{userProfile.preferredCurrency}</span></span>
               <button 
                 onClick={() => {
                   setDepositType('money');
@@ -780,7 +817,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         {/* Promo Banner */}
         {appSettings.promoBannerUrl && (
           <div className="mb-8 rounded-2xl overflow-hidden border border-[#22283A] w-full h-48 sm:h-64">
-            <img src={appSettings.promoBannerUrl} alt="Promo Banner" className="w-full h-full object-cover" />
+            <img src={appSettings.promoBannerUrl} alt="Promo Banner" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
           </div>
         )}
 
@@ -802,6 +839,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             { id: 'subscription', label: 'Subscriptions', icon: Activity },
             { id: 'product', label: 'Digital Products', icon: Package },
             { id: 'others', label: 'Others', icon: Package },
+            { id: 'referrals', label: 'Refer & Earn', icon: Users },
             { id: 'support', label: 'Support', icon: AlertCircle }
           ].map(tab => (
             <button
@@ -855,6 +893,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                       <img 
                         src={image} 
                         alt="Chart Preview" 
+                        referrerPolicy="no-referrer"
                         className="object-contain w-full h-full absolute inset-0 z-0 rounded-xl"
                       />
                       <div className="z-10 absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-[#0B0E14]/60 backdrop-blur-sm">
@@ -1059,7 +1098,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                         className="w-full h-48 border-2 border-dashed border-[#22283A] hover:border-purple-500/50 rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-colors bg-[#0B0E14] overflow-hidden"
                       >
                         {aiToolImage ? (
-                          <img src={aiToolImage} alt="Upload" className="w-full h-full object-contain" />
+                          <img src={aiToolImage} alt="Upload" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                         ) : (
                           <>
                             <ImageIcon className="w-8 h-8 text-[#8A93A6] mb-3" />
@@ -1130,7 +1169,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                     
                     <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-4 flex justify-center">
                       {aiResult.type === 'image' && aiResult.url && (
-                        <img src={aiResult.url} alt="Generated" className="max-w-full max-h-[500px] rounded-lg object-contain" />
+                        <img src={aiResult.url} alt="Generated" referrerPolicy="no-referrer" className="max-w-full max-h-[500px] rounded-lg object-contain" />
                       )}
                       {aiResult.type === 'video' && aiResult.url && (
                         <video src={aiResult.url} controls className="max-w-full max-h-[500px] rounded-lg" />
@@ -1144,8 +1183,24 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                       <button 
                         onClick={() => {
                           setAiResultTimer(null); // Stop timer on save
-                          // Implement actual save/download logic
-                          alert("Saved! Auto-delete cancelled.");
+                          if (aiResult.url) {
+                            const a = document.createElement('a');
+                            a.href = aiResult.url;
+                            a.download = `ai-result-${Date.now()}`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                          } else if (aiResult.text) {
+                            const blob = new Blob([aiResult.text], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `ai-result-${Date.now()}.txt`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          }
                         }}
                         className="px-6 py-2 rounded-lg font-semibold bg-[#22283A] hover:bg-[#2A3143] text-white transition-colors"
                       >
@@ -1165,7 +1220,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   <div key={product.id} className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 flex flex-col hover:border-purple-500/50 transition-colors group">
                     {product.imageUrl && (
                       <div className="w-full h-40 mb-4 rounded-xl overflow-hidden bg-[#0B0E14]">
-                        <img src={product.imageUrl} alt={product.title} className="w-full h-full object-cover" />
+                        <img src={product.imageUrl} alt={product.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                       </div>
                     )}
                     <div className="flex items-center space-x-2 mb-4">
@@ -1229,6 +1284,73 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                     <p className="text-[#8A93A6]">No support contact information available.</p>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'referrals' && (
+            <div className="space-y-6 w-full max-w-4xl mx-auto">
+              <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6">
+                <h2 className="text-xl font-bold text-white mb-4">Invite Friends & Earn Rewards</h2>
+                <p className="text-[#8A93A6] mb-6">Share your unique referral link with friends. When they sign up, you'll earn rewards after admin approval!</p>
+                
+                <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value={`${window.location.origin}/?ref=${userProfile.uid}`}
+                    className="w-full sm:flex-1 bg-[#0B0E14] border border-[#22283A] rounded-xl px-4 py-3 text-white font-mono text-sm"
+                  />
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/?ref=${userProfile.uid}`);
+                      alert('Copied to clipboard!');
+                    }}
+                    className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors whitespace-nowrap"
+                  >
+                    Copy Link
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-[#0B0E14] p-4 rounded-xl border border-[#22283A]">
+                    <p className="text-[#8A93A6] text-sm mb-1">Total Referrals</p>
+                    <p className="text-2xl font-bold text-white">{myReferrals.length}</p>
+                  </div>
+                  <div className="bg-[#0B0E14] p-4 rounded-xl border border-[#22283A]">
+                    <p className="text-[#8A93A6] text-sm mb-1">Approved</p>
+                    <p className="text-2xl font-bold text-green-400">{myReferrals.filter(r => r.status === 'approved').length}</p>
+                  </div>
+                  <div className="bg-[#0B0E14] p-4 rounded-xl border border-[#22283A]">
+                    <p className="text-[#8A93A6] text-sm mb-1">Pending</p>
+                    <p className="text-2xl font-bold text-yellow-400">{myReferrals.filter(r => r.status === 'pending').length}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* List of referrals */}
+              <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-white mb-4">Referral History</h3>
+                {myReferrals.length === 0 ? (
+                  <p className="text-[#8A93A6]">You haven't referred anyone yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {myReferrals.map(ref => (
+                      <div key={ref.id} className="flex justify-between items-center p-4 bg-[#0B0E14] rounded-xl border border-[#22283A]">
+                        <div>
+                          <p className="text-white font-medium">{ref.inviteeEmail}</p>
+                          <p className="text-xs text-[#8A93A6]">{ref.createdAt?.toDate().toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-purple-400">+{ref.rewardAmount} {ref.rewardType}</p>
+                          <span className={`text-xs px-2 py-1 rounded-full ${ref.status === 'approved' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                            {ref.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

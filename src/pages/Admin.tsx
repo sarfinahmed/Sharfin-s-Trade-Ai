@@ -5,7 +5,7 @@ import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, P
 import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check, Cpu, Zap } from 'lucide-react';
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools' | 'referrals'>('overview');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
@@ -13,6 +13,12 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [aiTools, setAiTools] = useState<AITool[]>([]);
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referralSettings, setReferralSettings] = useState({
+    isActive: false,
+    rewardAmount: 50,
+    rewardType: 'wallet'
+  });
   const [userSearch, setUserSearch] = useState('');
   
   // Modals/Forms state
@@ -86,6 +92,19 @@ export default function Admin() {
       setAiTools(snap.docs.map(d => ({ ...d.data(), id: d.id } as AITool)));
     });
 
+    // Listen to Referrals
+    const qReferrals = query(collection(db, 'referrals'), orderBy('createdAt', 'desc'));
+    const unsubReferrals = onSnapshot(qReferrals, (snap) => {
+      setReferrals(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+
+    // Listen to Referral Settings
+    const unsubRefSettings = onSnapshot(doc(db, 'settings', 'referral'), (docSnap) => {
+      if (docSnap.exists()) {
+        setReferralSettings(docSnap.data() as any);
+      }
+    });
+
     return () => {
       unsubUsers();
       unsubRequests();
@@ -95,6 +114,8 @@ export default function Admin() {
       unsubProducts();
       unsubOrders();
       unsubAiTools();
+      unsubReferrals();
+      unsubRefSettings();
     };
   }, []);
 
@@ -211,6 +232,10 @@ export default function Admin() {
             <Cpu className="w-5 h-5" />
             <span className="hidden md:inline">AI Tools</span>
           </button>
+          <button onClick={() => setActiveTab('referrals')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'referrals' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <Users className="w-5 h-5" />
+            <span className="hidden md:inline">Referrals</span>
+          </button>
           <button onClick={() => setActiveTab('settings')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <Settings className="w-5 h-5" />
             <span className="hidden md:inline">Settings</span>
@@ -276,7 +301,11 @@ export default function Admin() {
                 <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">Email</th>
-                    <th className="px-6 py-4">Credits</th>
+                    <th className="px-6 py-4">Ai Credits</th>
+                    <th className="px-6 py-4">Bronze</th>
+                    <th className="px-6 py-4">Silver</th>
+                    <th className="px-6 py-4">Gold</th>
+                    <th className="px-6 py-4">Diamond</th>
                     <th className="px-6 py-4">Wallet Balance</th>
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Status</th>
@@ -293,22 +322,48 @@ export default function Admin() {
                             type="number" 
                             value={u.credits || 0}
                             onChange={(e) => handleUpdateUser(u.uid, { credits: parseInt(e.target.value) || 0 })}
-                            className="w-20 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
+                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
                           />
-                          <button 
-                            onClick={() => handleUpdateUser(u.uid, { credits: (u.credits || 0) + 10 })}
-                            className="p-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors"
-                            title="Add 10 Credits"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleUpdateUser(u.uid, { credits: Math.max(0, (u.credits || 0) - 10) })}
-                            className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
-                            title="Remove 10 Credits"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input 
+                            type="number" 
+                            value={u.creditBalances?.bronze || 0}
+                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, bronze: parseInt(e.target.value) || 0 } })}
+                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#CD7F32]"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input 
+                            type="number" 
+                            value={u.creditBalances?.silver || 0}
+                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, silver: parseInt(e.target.value) || 0 } })}
+                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#C0C0C0]"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input 
+                            type="number" 
+                            value={u.creditBalances?.gold || 0}
+                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, gold: parseInt(e.target.value) || 0 } })}
+                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#FFD700]"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input 
+                            type="number" 
+                            value={u.creditBalances?.diamond || 0}
+                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, diamond: parseInt(e.target.value) || 0 } })}
+                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#00FFFF]"
+                          />
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -759,6 +814,146 @@ export default function Admin() {
                   <p className="text-[#8A93A6]">No AI tools configured.</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'referrals' && (
+          <div className="space-y-6">
+            <h3 className="text-2xl font-bold">Referral System</h3>
+            
+            {/* Settings */}
+            <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 space-y-6 max-w-2xl">
+              <h4 className="text-lg font-bold text-white">Referral Settings</h4>
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={async () => {
+                    const newSettings = { ...referralSettings, isActive: !referralSettings.isActive };
+                    setReferralSettings(newSettings);
+                    await setDoc(doc(db, 'settings', 'referral'), newSettings);
+                    showToast('Referral status updated');
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${referralSettings.isActive ? 'bg-purple-600' : 'bg-[#22283A]'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${referralSettings.isActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+                <span className="text-sm text-[#8A93A6]">Enable Referral System</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Reward Amount</label>
+                <input 
+                  type="number" 
+                  value={referralSettings.rewardAmount}
+                  onChange={(e) => setReferralSettings({ ...referralSettings, rewardAmount: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Reward Type</label>
+                <select 
+                  value={referralSettings.rewardType}
+                  onChange={(e) => setReferralSettings({ ...referralSettings, rewardType: e.target.value })}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                >
+                  <option value="wallet">Wallet Balance</option>
+                  <option value="bronze">Bronze Credits</option>
+                  <option value="silver">Silver Credits</option>
+                  <option value="gold">Gold Credits</option>
+                  <option value="diamond">Diamond Credits</option>
+                  <option value="credits">Normal Credits</option>
+                </select>
+              </div>
+
+              <button 
+                onClick={async () => {
+                  await setDoc(doc(db, 'settings', 'referral'), referralSettings);
+                  showToast('Referral settings saved');
+                }}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors flex items-center space-x-2"
+              >
+                <Save className="w-5 h-5" />
+                <span>Save Settings</span>
+              </button>
+            </div>
+
+            {/* Referrals List */}
+            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
+                      <th className="px-6 py-4">Date</th>
+                      <th className="px-6 py-4">Referrer ID</th>
+                      <th className="px-6 py-4">Invitee Email</th>
+                      <th className="px-6 py-4">Reward</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#22283A]">
+                    {referrals.map((ref) => (
+                      <tr key={ref.id} className="hover:bg-[#1A1F2E]/50 transition-colors">
+                        <td className="px-6 py-4 text-sm text-[#8A93A6]">{ref.createdAt?.toDate().toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-white">{ref.referrerId}</td>
+                        <td className="px-6 py-4 text-sm text-white">{ref.inviteeEmail}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-green-400">{ref.rewardAmount} {ref.rewardType}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${ref.status === 'approved' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                            {ref.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          {ref.status === 'pending' && (
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const referrerRef = doc(db, 'users', ref.referrerId);
+                                  const referrerSnap = await getDoc(referrerRef);
+                                  if (!referrerSnap.exists()) {
+                                    showToast('Referrer not found', 'error');
+                                    return;
+                                  }
+                                  
+                                  const referrerData = referrerSnap.data();
+                                  const updates: any = {};
+                                  
+                                  if (ref.rewardType === 'wallet') {
+                                    updates.walletBalance = (referrerData.walletBalance || 0) + ref.rewardAmount;
+                                  } else if (['bronze', 'silver', 'gold', 'diamond'].includes(ref.rewardType)) {
+                                    updates.creditBalances = {
+                                      ...referrerData.creditBalances,
+                                      [ref.rewardType]: (referrerData.creditBalances?.[ref.rewardType] || 0) + ref.rewardAmount
+                                    };
+                                  } else if (ref.rewardType === 'credits') {
+                                    updates.credits = (referrerData.credits || 0) + ref.rewardAmount;
+                                  }
+                                  
+                                  await updateDoc(referrerRef, updates);
+                                  await updateDoc(doc(db, 'referrals', ref.id), { status: 'approved' });
+                                  showToast('Referral approved and reward granted');
+                                } catch (e) {
+                                  console.error(e);
+                                  showToast('Error approving referral', 'error');
+                                }
+                              }}
+                              className="bg-green-500/20 text-green-400 hover:bg-green-500/30 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                            >
+                              Approve
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {referrals.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-[#8A93A6]">No referrals found</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1264,13 +1459,24 @@ export default function Admin() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#8A93A6] mb-2">Model Name</label>
-                  <input 
-                    type="text" 
+                  <select 
                     value={editingAiTool.model}
                     onChange={(e) => setEditingAiTool({...editingAiTool, model: e.target.value})}
                     className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500 font-mono text-sm"
-                    placeholder="e.g. gemini-2.5-flash-image"
-                  />
+                  >
+                    <option value="">Select a model...</option>
+                    <optgroup label="Text & Chat">
+                      <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Complex)</option>
+                      <option value="gemini-3-flash-preview">gemini-3-flash-preview (Basic)</option>
+                    </optgroup>
+                    <optgroup label="Image Generation & Editing">
+                      <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (General)</option>
+                      <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview (High Quality)</option>
+                    </optgroup>
+                    <optgroup label="Video Generation">
+                      <option value="veo-3.1-lite-generate-preview">veo-3.1-lite-generate-preview</option>
+                    </optgroup>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#8A93A6] mb-2">Custom API Key (Optional)</label>
@@ -1313,7 +1519,11 @@ export default function Admin() {
                     onChange={(e) => setEditingAiTool({...editingAiTool, costType: e.target.value as any})}
                     className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
                   >
-                    <option value="credit">Credits</option>
+                    <option value="credit">Ai Credits (Default)</option>
+                    <option value="bronze">Bronze Credits</option>
+                    <option value="silver">Silver Credits</option>
+                    <option value="gold">Gold Credits</option>
+                    <option value="diamond">Diamond Credits</option>
                     <option value="wallet">Wallet Balance</option>
                   </select>
                 </div>

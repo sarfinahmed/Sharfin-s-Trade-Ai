@@ -7,6 +7,12 @@ export interface UserProfile {
   photoURL: string | null;
   createdAt: any;
   credits: number;
+  creditBalances?: {
+    bronze: number;
+    silver: number;
+    gold: number;
+    diamond: number;
+  };
   role: 'admin' | 'user';
   isBlocked: boolean;
   walletBalance?: number;
@@ -98,7 +104,7 @@ export interface AITool {
   systemPrompt: string;
   userPromptAllowed: boolean;
   cost: number;
-  costType: 'credit' | 'wallet';
+  costType: 'credit' | 'wallet' | 'bronze' | 'silver' | 'gold' | 'diamond';
   defaultFreeUses: number;
   isActive: boolean;
   createdAt?: any;
