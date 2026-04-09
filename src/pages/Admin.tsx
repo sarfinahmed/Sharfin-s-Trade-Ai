@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, addDoc, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
 import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, Product, Order, AITool } from '../types';
 import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check, Cpu, Zap } from 'lucide-react';
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools' | 'referrals'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools' | 'referrals' | 'unipin'>('overview');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
@@ -13,6 +13,7 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [aiTools, setAiTools] = useState<AITool[]>([]);
+  const [unipinCodes, setUnipinCodes] = useState<any[]>([]);
   const [referrals, setReferrals] = useState<any[]>([]);
   const [referralSettings, setReferralSettings] = useState({
     isActive: false,
@@ -31,6 +32,11 @@ export default function Admin() {
   const [showAiToolForm, setShowAiToolForm] = useState(false);
   const [editingAiTool, setEditingAiTool] = useState<Partial<AITool> | null>(null);
   const [editingUserLimits, setEditingUserLimits] = useState<UserProfile | null>(null);
+
+  const [showUnipinModal, setShowUnipinModal] = useState(false);
+  const [unipinInputCodes, setUnipinInputCodes] = useState('');
+  const [unipinInputProductId, setUnipinInputProductId] = useState('');
+  const [isSubmittingUnipin, setIsSubmittingUnipin] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings>({
     appName: "Sharfin's AI",
@@ -92,6 +98,12 @@ export default function Admin() {
       setAiTools(snap.docs.map(d => ({ ...d.data(), id: d.id } as AITool)));
     });
 
+    // Listen to UNIPIN Codes
+    const qUnipin = query(collection(db, 'unipin_codes'), orderBy('createdAt', 'desc'));
+    const unsubUnipin = onSnapshot(qUnipin, (snap) => {
+      setUnipinCodes(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+
     // Listen to Referrals
     const qReferrals = query(collection(db, 'referrals'), orderBy('createdAt', 'desc'));
     const unsubReferrals = onSnapshot(qReferrals, (snap) => {
@@ -114,6 +126,7 @@ export default function Admin() {
       unsubProducts();
       unsubOrders();
       unsubAiTools();
+      unsubUnipin();
       unsubReferrals();
       unsubRefSettings();
     };
@@ -218,6 +231,10 @@ export default function Admin() {
           <button onClick={() => setActiveTab('store')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'store' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <ShoppingBag className="w-5 h-5" />
             <span className="hidden md:inline">Products & Offers</span>
+          </button>
+          <button onClick={() => setActiveTab('unipin')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'unipin' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <Zap className="w-5 h-5" />
+            <span className="hidden md:inline">UNIPIN Codes</span>
           </button>
           <button onClick={() => setActiveTab('orders')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'orders' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
             <ShoppingCart className="w-5 h-5" />
@@ -588,7 +605,7 @@ export default function Admin() {
               <h3 className="text-2xl font-bold">Products & Offers</h3>
               <button 
                 onClick={() => {
-                  setEditingProduct({ title: '', description: '', priceDisplay: '', category: 'game_topup', requirements: [], conditions: '', isActive: true });
+                  setEditingProduct({ title: '', description: '', priceDisplay: '', category: 'game_topup', requirements: [], conditions: '', isActive: true, isAutoUnipin: false });
                   setShowProductForm(true);
                 }}
                 className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -701,6 +718,20 @@ export default function Admin() {
                             </button>
                             <button 
                               onClick={async () => {
+                                if (o.paymentType === 'wallet') {
+                                  try {
+                                    const userRef = doc(db, 'users', o.userId);
+                                    const userSnap = await getDoc(userRef);
+                                    if (userSnap.exists()) {
+                                      const userData = userSnap.data();
+                                      await updateDoc(userRef, {
+                                        walletBalance: (userData.walletBalance || 0) + (o.price || 0)
+                                      });
+                                    }
+                                  } catch (e) {
+                                    console.error("Error refunding wallet:", e);
+                                  }
+                                }
                                 await updateDoc(doc(db, 'orders', o.id!), { status: 'rejected' });
                               }}
                               className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
@@ -716,6 +747,77 @@ export default function Admin() {
                   {orders.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-8 text-center text-[#8A93A6]">No orders found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'unipin' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h3 className="text-2xl font-bold">UNIPIN Codes Management</h3>
+              <button 
+                onClick={() => {
+                  setUnipinInputCodes('');
+                  setUnipinInputProductId('');
+                  setShowUnipinModal(true);
+                }}
+                className="flex items-center space-x-2 bg-gradient-to-r from-[#8B5CF6] to-[#3B82F6] hover:opacity-90 text-white px-4 py-2 rounded-xl transition-opacity"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add Codes</span>
+              </button>
+            </div>
+
+            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
+                  <tr>
+                    <th className="p-4 font-medium">Product ID</th>
+                    <th className="p-4 font-medium">Code</th>
+                    <th className="p-4 font-medium">Status</th>
+                    <th className="p-4 font-medium">Used By</th>
+                    <th className="p-4 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#22283A]">
+                  {unipinCodes.map((code) => (
+                    <tr key={code.id} className="hover:bg-[#1A1F2E] transition-colors">
+                      <td className="p-4 text-sm">{code.productId}</td>
+                      <td className="p-4 text-sm font-mono">{code.code}</td>
+                      <td className="p-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          code.status === 'unused' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {code.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="p-4 text-sm text-[#8A93A6]">
+                        {code.usedBy || '-'}
+                      </td>
+                      <td className="p-4">
+                        <button 
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to delete this code?')) {
+                              await deleteDoc(doc(db, 'unipin_codes', code.id));
+                            }
+                          }}
+                          className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
+                          title="Delete Code"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {unipinCodes.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-[#8A93A6]">
+                        No UNIPIN codes found.
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -1204,6 +1306,80 @@ export default function Admin() {
         </div>
       )}
 
+      {/* UNIPIN Modal */}
+      {showUnipinModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white">Add UNIPIN Codes</h3>
+              <button onClick={() => setShowUnipinModal(false)} className="text-[#8A93A6] hover:text-white">
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Select Product</label>
+                <select 
+                  value={unipinInputProductId}
+                  onChange={(e) => setUnipinInputProductId(e.target.value)}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500"
+                >
+                  <option value="">Select a product...</option>
+                  {products.filter(p => p.isAutoUnipin).map(p => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Codes (One per line)</label>
+                <textarea 
+                  value={unipinInputCodes}
+                  onChange={(e) => setUnipinInputCodes(e.target.value)}
+                  rows={5}
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 font-mono text-sm"
+                  placeholder="Code123&#10;Code456&#10;Code789"
+                />
+              </div>
+              <button 
+                onClick={async () => {
+                  if (!unipinInputProductId) {
+                    showToast("Please select a product", "error");
+                    return;
+                  }
+                  const codeArray = unipinInputCodes.split('\n').map(c => c.trim()).filter(c => c);
+                  if (codeArray.length === 0) {
+                    showToast("Please enter at least one code", "error");
+                    return;
+                  }
+                  setIsSubmittingUnipin(true);
+                  try {
+                    for (const code of codeArray) {
+                      await addDoc(collection(db, 'unipin_codes'), {
+                        productId: unipinInputProductId,
+                        code,
+                        status: 'unused',
+                        createdAt: serverTimestamp()
+                      });
+                    }
+                    showToast(`Successfully added ${codeArray.length} codes!`);
+                    setShowUnipinModal(false);
+                  } catch (err) {
+                    console.error(err);
+                    showToast("Failed to add codes", "error");
+                  } finally {
+                    setIsSubmittingUnipin(false);
+                  }
+                }}
+                disabled={isSubmittingUnipin}
+                className="w-full py-3 rounded-xl font-semibold bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 transition-colors"
+              >
+                {isSubmittingUnipin ? 'Adding...' : `Add ${unipinInputCodes.split('\n').map(c => c.trim()).filter(c => c).length} Codes`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Product Form Modal */}
       {showProductForm && editingProduct && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1307,6 +1483,16 @@ export default function Admin() {
                   className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
                 />
                 <label className="text-sm font-medium text-white">Active (Visible to users)</label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  checked={editingProduct.isAutoUnipin || false}
+                  onChange={(e) => setEditingProduct({...editingProduct, isAutoUnipin: e.target.checked})}
+                  className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
+                />
+                <label className="text-sm font-medium text-white">Auto UNIPIN Delivery (System will automatically deliver an unused UNIPIN code for this product)</label>
               </div>
             </div>
             <div className="flex space-x-3 mt-8">

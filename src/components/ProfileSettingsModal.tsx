@@ -133,6 +133,13 @@ export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSe
                       </div>
                     ))}
                   </div>
+                  
+                  {order.unipinCode && (
+                    <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                      <p className="text-xs text-purple-400 mb-1">Your UNIPIN Code</p>
+                      <p className="font-mono text-lg font-bold text-white tracking-wider">{order.unipinCode}</p>
+                    </div>
+                  )}
                 </div>
               ))}
               

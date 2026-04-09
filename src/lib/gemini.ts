@@ -12,7 +12,7 @@ export async function analyzeChart(base64Image: string, mimeType: string, apiKey
   const ai = new GoogleGenAI({ apiKey: apiKey || process.env.GEMINI_API_KEY });
   
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.1-pro-preview",
     contents: [
       {
         inlineData: {

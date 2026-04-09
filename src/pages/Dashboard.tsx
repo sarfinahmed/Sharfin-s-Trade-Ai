@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell, ShoppingBag, Gamepad2, Package, CheckCircle2 } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell, ShoppingBag, Gamepad2, Package, CheckCircle2, Users } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { analyzeChart, AnalysisResult } from '../lib/gemini';
 import { auth, db } from '../firebase';
@@ -155,7 +155,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         }
       } else if (activeAiTool.type === 'text_to_text') {
         const response = await ai.models.generateContent({
-          model: activeAiTool.model || 'gemini-3.1-flash-preview',
+          model: activeAiTool.model || 'gemini-3.1-pro-preview',
           contents: finalPrompt,
         });
         generatedResult = { type: 'text', text: response.text };
@@ -207,7 +207,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
     } catch (err: any) {
       console.error("AI Generation Error:", err);
-      alert(`Generation failed: ${err.message}`);
+      if (err.message?.includes('permission denied') || err.message?.includes('403')) {
+        alert(`API Error: Permission Denied. Please check if your Custom Gemini API Key is valid, has 'Generative Language API' enabled, and has no strict HTTP restrictions.`);
+      } else {
+        alert(`Generation failed: ${err.message}`);
+      }
       // Refund if failed? For simplicity, we might not refund immediately here, but in a real app we should.
     } finally {
       setIsGeneratingAi(false);
@@ -553,11 +557,37 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               
               setIsSubmittingOrder(true);
               try {
+                let status = 'pending';
+                let unipinCode = null;
+                let unipinCodeId = null;
+
+                // Check for Auto UNIPIN
+                if (selectedProduct.isAutoUnipin && orderPaymentType === 'wallet') {
+                  const qUnipin = query(collection(db, 'unipin_codes'), where('productId', '==', selectedProduct.id), where('status', '==', 'unused'));
+                  const unipinSnap = await getDocs(qUnipin);
+                  if (!unipinSnap.empty) {
+                    const codeDoc = unipinSnap.docs[0];
+                    unipinCode = codeDoc.data().code;
+                    unipinCodeId = codeDoc.id;
+                    status = 'completed';
+                  } else {
+                    alert("Sorry, no UNIPIN codes are currently available for this product. Your order will be processed manually.");
+                  }
+                }
+
                 // Deduct from wallet if applicable
                 if (orderPaymentType === 'wallet') {
                   const userRef = doc(db, 'users', userProfile.uid);
                   await updateDoc(userRef, {
                     walletBalance: (userProfile.walletBalance || 0) - (selectedProduct.price || 0)
+                  });
+                }
+
+                if (unipinCodeId) {
+                  await updateDoc(doc(db, 'unipin_codes', unipinCodeId), {
+                    status: 'used',
+                    usedBy: userProfile.email,
+                    usedAt: serverTimestamp()
                   });
                 }
 
@@ -572,10 +602,16 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   paymentMethodName: orderPaymentType === 'wallet' ? 'Wallet Balance' : orderPaymentMethod,
                   paymentType: orderPaymentType,
                   transactionId: orderPaymentType === 'wallet' ? 'WALLET_PAYMENT' : orderTxId,
-                  status: orderPaymentType === 'wallet' ? 'completed' : 'pending',
+                  status: status,
+                  unipinCode: unipinCode,
                   createdAt: serverTimestamp()
                 });
-                alert("Order placed successfully! You can track it in your profile.");
+                
+                if (unipinCode) {
+                  alert(`Order successful! Your UNIPIN Code is: ${unipinCode}\nYou can also find it in your profile.`);
+                } else {
+                  alert("Order placed successfully! You can track it in your profile.");
+                }
                 setSelectedProduct(null);
               } catch (err) {
                 console.error("Error placing order:", err);

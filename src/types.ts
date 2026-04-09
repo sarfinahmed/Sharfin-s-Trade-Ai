@@ -75,6 +75,7 @@ export interface Product {
   requirements: string[];
   conditions: string;
   isActive: boolean;
+  isAutoUnipin?: boolean;
   createdAt?: any;
 }
 
@@ -91,6 +92,17 @@ export interface Order {
   paymentType?: 'wallet' | 'direct';
   paymentMethodName: string;
   transactionId: string;
+  unipinCode?: string;
+  createdAt: any;
+}
+
+export interface UnipinCode {
+  id?: string;
+  productId: string;
+  code: string;
+  status: 'unused' | 'used';
+  usedBy?: string;
+  usedAt?: any;
   createdAt: any;
 }
 

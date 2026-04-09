@@ -70,7 +70,7 @@ export default function Auth({ appSettings }: AuthProps) {
     <div className="min-h-screen bg-[#0B0E14] text-white font-sans flex items-center justify-center selection:bg-purple-500/30">
       <div className="max-w-md w-full bg-[#131722] border border-[#22283A] rounded-2xl p-8 flex flex-col items-center text-center shadow-2xl">
         {appSettings.logoUrl ? (
-          <img src={appSettings.logoUrl} alt="Logo" className="w-16 h-16 rounded-2xl object-cover mb-6 shadow-lg" />
+          <img src={appSettings.logoUrl} alt="Logo" referrerPolicy="no-referrer" className="w-16 h-16 rounded-2xl object-cover mb-6 shadow-lg" />
         ) : (
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#8B5CF6] to-[#3B82F6] flex items-center justify-center shadow-lg mb-6">
             <Activity className="w-8 h-8 text-white" />
