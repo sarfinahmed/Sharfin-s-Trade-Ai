@@ -35,7 +35,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [aiTools, setAiTools] = useState<AITool[]>([]);
-  const [activeTab, setActiveTab] = useState<'chart' | 'ai_tools' | 'offer' | 'game_topup' | 'subscription' | 'product' | 'others' | 'support' | 'referrals'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'ai_tools' | 'offer' | 'game_topup' | 'subscription' | 'product' | 'others' | 'support' | 'referrals'>('game_topup');
   const [depositType, setDepositType] = useState<'credit' | 'money'>('credit');
   const [depositAmount, setDepositAmount] = useState(10);
   
@@ -62,6 +62,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiResult, setAiResult] = useState<{ type: string, url?: string, text?: string } | null>(null);
   const [aiResultTimer, setAiResultTimer] = useState<number | null>(null);
+  const [errorModal, setErrorModal] = useState<{title: string, message: string} | null>(null);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGenerateAi = async () => {
@@ -72,16 +73,16 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
     
     if (!hasFreeUse) {
       if (activeAiTool.costType === 'credit' && userProfile.credits < activeAiTool.cost) {
-        alert(`Insufficient Ai credits. You need ${activeAiTool.cost} Ai credits.`);
+        setErrorModal({ title: "Insufficient Credits", message: `You need ${activeAiTool.cost} Ai credits to use this tool.` });
         return;
       } else if (['bronze', 'silver', 'gold', 'diamond'].includes(activeAiTool.costType)) {
         const balance = userProfile.creditBalances?.[activeAiTool.costType as keyof typeof userProfile.creditBalances] || 0;
         if (balance < activeAiTool.cost) {
-          alert(`Insufficient ${activeAiTool.costType} credits. You need ${activeAiTool.cost} ${activeAiTool.costType} credits.`);
+          setErrorModal({ title: "Insufficient Credits", message: `You need ${activeAiTool.cost} ${activeAiTool.costType} credits to use this tool.` });
           return;
         }
       } else if (activeAiTool.costType === 'wallet' && (userProfile.walletBalance || 0) < activeAiTool.cost) {
-        alert(`Insufficient wallet balance. You need ${activeAiTool.cost} ${userProfile.preferredCurrency || 'BDT'}.`);
+        setErrorModal({ title: "Insufficient Balance", message: `You need ${activeAiTool.cost} BDT in your wallet to use this tool.` });
         return;
       }
     }
@@ -208,9 +209,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
     } catch (err: any) {
       console.error("AI Generation Error:", err);
       if (err.message?.includes('permission denied') || err.message?.includes('403')) {
-        alert(`API Error: Permission Denied. Please check if your Custom Gemini API Key is valid, has 'Generative Language API' enabled, and has no strict HTTP restrictions.`);
+        setErrorModal({ title: "Service Unavailable", message: "The AI service is currently unavailable due to an API configuration issue. Please try again later or contact support." });
+      } else if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+        setErrorModal({ title: "High Traffic", message: "The AI service is currently experiencing high traffic. Please try again in a few moments." });
       } else {
-        alert(`Generation failed: ${err.message}`);
+        setErrorModal({ title: "Generation Failed", message: "Oops! Something went wrong while generating the response. Please try again." });
       }
       // Refund if failed? For simplicity, we might not refund immediately here, but in a real app we should.
     } finally {
@@ -244,21 +247,29 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
     const qPayments = query(collection(db, 'paymentMethods'), where('isActive', '==', true));
     const unsubPayments = onSnapshot(qPayments, (snap) => {
       setPaymentMethods(snap.docs.map(d => ({ ...d.data(), id: d.id } as PaymentMethod)));
+    }, (error) => {
+      console.error("PaymentMethods snapshot error:", error);
     });
 
     const qProducts = query(collection(db, 'products'), where('isActive', '==', true));
     const unsubProducts = onSnapshot(qProducts, (snap) => {
       setProducts(snap.docs.map(d => ({ ...d.data(), id: d.id } as Product)));
+    }, (error) => {
+      console.error("Products snapshot error:", error);
     });
 
     const qAiTools = query(collection(db, 'aiTools'), where('isActive', '==', true));
     const unsubAiTools = onSnapshot(qAiTools, (snap) => {
       setAiTools(snap.docs.map(d => ({ ...d.data(), id: d.id } as AITool)));
+    }, (error) => {
+      console.error("AiTools snapshot error:", error);
     });
 
     const qReferrals = query(collection(db, 'referrals'), where('referrerId', '==', userProfile.uid));
     const unsubReferrals = onSnapshot(qReferrals, (snap) => {
       setMyReferrals(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (error) => {
+      console.error("Referrals snapshot error:", error);
     });
 
     return () => {
@@ -663,11 +674,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   <div className="bg-[#1A1F2E] p-4 rounded-xl border border-[#22283A]">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-[#8A93A6]">Wallet Balance:</span>
-                      <span className="font-bold text-white">{userProfile.walletBalance || 0} {userProfile.preferredCurrency}</span>
+                      <span className="font-bold text-white">{userProfile.walletBalance || 0} BDT</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[#8A93A6]">Product Price:</span>
-                      <span className="font-bold text-green-400">{selectedProduct.price} {userProfile.preferredCurrency}</span>
+                      <span className="font-bold text-green-400">{selectedProduct.price} BDT</span>
                     </div>
                     {(userProfile.walletBalance || 0) < (selectedProduct.price || 0) && (
                       <p className="text-red-400 text-sm mt-4">Insufficient balance. Please deposit funds.</p>
@@ -748,6 +759,27 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         <ProfileSettingsModal onClose={() => setShowProfileModal(false)} userProfile={userProfile} />
       )}
 
+      {/* Error Modal */}
+      {errorModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#131722] border border-red-500/30 rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-2xl shadow-red-900/20 text-center animate-in fade-in zoom-in duration-200">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">{errorModal.title}</h3>
+            <p className="text-[#8A93A6] text-sm mb-6 leading-relaxed">
+              {errorModal.message}
+            </p>
+            <button 
+              onClick={() => setErrorModal(null)}
+              className="w-full py-3 rounded-xl font-semibold bg-[#22283A] hover:bg-[#2A3143] text-white transition-colors"
+            >
+              Okay
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto px-6 py-10 min-h-screen flex flex-col">
         {/* Header */}
         <header className="flex flex-col sm:flex-row items-center justify-between mb-10 space-y-4 sm:space-y-0">
@@ -761,20 +793,11 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             )}
             <div>
               <h1 className="text-2xl font-bold text-white tracking-wide">{appSettings.appName}</h1>
-              <p className="text-[11px] text-[#8A93A6] font-bold tracking-widest uppercase mt-0.5">Professional Chart Analysis</p>
+              <p className="text-[11px] text-[#8A93A6] font-bold tracking-widest uppercase mt-0.5">{appSettings.appSubtitle || "Professional Chart Analysis"}</p>
             </div>
           </div>
           
           <div className="flex flex-wrap items-center justify-center gap-2 sm:space-x-4 sm:gap-0">
-            <button 
-              onClick={async () => {
-                const newCurrency = userProfile.preferredCurrency === 'BDT' ? 'USD' : 'BDT';
-                await updateDoc(doc(db, 'users', userProfile.uid), { preferredCurrency: newCurrency });
-              }}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#22283A] bg-[#131722] hover:bg-[#1A1F2E] transition-colors text-sm font-bold text-white"
-            >
-              {userProfile.preferredCurrency}
-            </button>
             <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <Zap className="w-4 h-4 text-[#F59E0B]" />
               <span className="text-sm font-bold text-white">{userProfile.credits} <span className="hidden sm:inline">Ai Credits</span></span>
@@ -810,7 +833,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
             )}
             <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <CreditCard className="w-4 h-4 text-green-400" />
-              <span className="text-sm font-bold text-white">{userProfile.walletBalance || 0} <span className="hidden sm:inline">{userProfile.preferredCurrency}</span></span>
+              <span className="text-sm font-bold text-white">{userProfile.walletBalance || 0} <span className="hidden sm:inline">BDT</span></span>
               <button 
                 onClick={() => {
                   setDepositType('money');
@@ -868,10 +891,10 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         {/* Tabs Navigation */}
         <div className="flex overflow-x-auto custom-scrollbar space-x-2 mb-8 pb-2">
           {[
+            { id: 'game_topup', label: 'Game Top-up', icon: Gamepad2 },
             { id: 'chart', label: 'Chart Analysis', icon: BarChart2 },
             { id: 'ai_tools', label: 'AI Studio', icon: Zap },
             { id: 'offer', label: 'Offers', icon: ShoppingBag },
-            { id: 'game_topup', label: 'Game Top-up', icon: Gamepad2 },
             { id: 'subscription', label: 'Subscriptions', icon: Activity },
             { id: 'product', label: 'Digital Products', icon: Package },
             { id: 'others', label: 'Others', icon: Package },
@@ -1255,7 +1278,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 {products.filter(p => p.category === activeTab).map(product => (
                   <div key={product.id} className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 flex flex-col hover:border-purple-500/50 transition-colors group">
                     {product.imageUrl && (
-                      <div className="w-full h-40 mb-4 rounded-xl overflow-hidden bg-[#0B0E14]">
+                      <div className={`w-full mb-4 rounded-xl overflow-hidden bg-[#0B0E14] ${product.imageRatio === '1:1' ? 'aspect-square' : product.imageRatio === '16:9' ? 'aspect-video' : product.imageRatio === '4:3' ? 'aspect-[4/3]' : product.category === 'game_topup' ? 'aspect-square' : 'h-40'}`}>
                         <img src={product.imageUrl} alt={product.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                       </div>
                     )}

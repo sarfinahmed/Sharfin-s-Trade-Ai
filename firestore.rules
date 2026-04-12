@@ -38,7 +38,7 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'creditBalances', 'role', 'isBlocked', 'walletBalance', 'preferredCurrency', 'toolLimits']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'creditBalances', 'role', 'isBlocked', 'walletBalance', 'preferredCurrency', 'toolLimits', 'referredBy']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 255 &&
              (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
@@ -50,7 +50,8 @@ service cloud.firestore {
              (!('isBlocked' in data) || data.isBlocked is bool) &&
              (!('walletBalance' in data) || data.walletBalance is number) &&
              (!('preferredCurrency' in data) || data.preferredCurrency in ['BDT', 'USD']) &&
-             (!('toolLimits' in data) || data.toolLimits is map);
+             (!('toolLimits' in data) || data.toolLimits is map) &&
+             (!('referredBy' in data) || data.referredBy == null || data.referredBy is string);
     }
 
     function isCreditBalancesValid(oldData, newData) {
@@ -70,12 +71,12 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       
       // Users can create their own profile, but cannot set themselves as admin or give themselves credits
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() &&
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() &&
                     (!('role' in request.resource.data) || request.resource.data.role == 'user') &&
                     (!('credits' in request.resource.data) || request.resource.data.credits == 0 || request.resource.data.credits == 5) &&
                     (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0) &&
                     isCreditBalancesValid({}, request.resource.data) &&
-                    (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false);
+                    (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false)) || (isAdmin() && isOwner(userId) && isValidUser(request.resource.data));
       
       // Users can update their profile (but not role/isBlocked). Admin can update anything.
       // Also, allow users to deduct their own credits and walletBalance.
@@ -133,6 +134,11 @@ service cloud.firestore {
 
     match /aiTools/{id} {
       allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /unipin_codes/{id} {
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
   }

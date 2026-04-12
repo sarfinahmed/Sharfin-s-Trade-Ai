@@ -34,6 +34,7 @@ export interface CreditRequest {
 
 export interface AppSettings {
   appName: string;
+  appSubtitle?: string;
   logoUrl: string;
   defaultCredits: number;
   paymentMethodInfo: string;
@@ -71,6 +72,7 @@ export interface Product {
   priceDisplay: string;
   price?: number;
   imageUrl?: string;
+  imageRatio?: '1:1' | '16:9' | '4:3' | 'auto';
   category: 'game_topup' | 'subscription' | 'product' | 'offer' | 'others';
   requirements: string[];
   conditions: string;

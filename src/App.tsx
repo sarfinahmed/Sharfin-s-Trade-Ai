@@ -32,6 +32,8 @@ export default function App() {
       if (docSnap.exists()) {
         setAppSettings(docSnap.data() as AppSettings);
       }
+    }, (error) => {
+      console.error("AppSettings snapshot error:", error);
     });
     return () => unsubSettings();
   }, []);
@@ -111,6 +113,9 @@ export default function App() {
             if (doc.exists()) {
               setUserProfile(doc.data() as UserProfile);
             }
+            setIsAuthReady(true);
+          }, (error) => {
+            console.error("User profile snapshot error:", error);
             setIsAuthReady(true);
           });
         } catch (err) {

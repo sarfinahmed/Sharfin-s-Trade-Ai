@@ -1076,6 +1076,17 @@ export default function Admin() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-[#8A93A6] mb-2">App Subtitle (e.g., Professional Chart Analysis)</label>
+                <input 
+                  type="text" 
+                  value={settings.appSubtitle || ''}
+                  onChange={(e) => setSettings({...settings, appSubtitle: e.target.value})}
+                  placeholder="Professional Chart Analysis"
+                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">Logo URL (Optional)</label>
                 <input 
                   type="text" 
@@ -1433,15 +1444,30 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[#8A93A6] mb-2">Image URL (Optional)</label>
-                <input 
-                  type="text" 
-                  value={editingProduct.imageUrl || ''}
-                  onChange={(e) => setEditingProduct({...editingProduct, imageUrl: e.target.value})}
-                  className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
-                  placeholder="https://example.com/product.png"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Image URL (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={editingProduct.imageUrl || ''}
+                    onChange={(e) => setEditingProduct({...editingProduct, imageUrl: e.target.value})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                    placeholder="https://example.com/product.png"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Image Aspect Ratio</label>
+                  <select 
+                    value={editingProduct.imageRatio || 'auto'}
+                    onChange={(e) => setEditingProduct({...editingProduct, imageRatio: e.target.value as any})}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="auto">Auto (Default)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                    <option value="16:9">16:9 (Widescreen)</option>
+                    <option value="4:3">4:3 (Standard)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -1645,24 +1671,22 @@ export default function Admin() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#8A93A6] mb-2">Model Name</label>
-                  <select 
-                    value={editingAiTool.model}
+                  <input 
+                    type="text"
+                    list="model-suggestions"
+                    value={editingAiTool.model || ''}
                     onChange={(e) => setEditingAiTool({...editingAiTool, model: e.target.value})}
                     className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500 font-mono text-sm"
-                  >
-                    <option value="">Select a model...</option>
-                    <optgroup label="Text & Chat">
-                      <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Complex)</option>
-                      <option value="gemini-3-flash-preview">gemini-3-flash-preview (Basic)</option>
-                    </optgroup>
-                    <optgroup label="Image Generation & Editing">
-                      <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (General)</option>
-                      <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview (High Quality)</option>
-                    </optgroup>
-                    <optgroup label="Video Generation">
-                      <option value="veo-3.1-lite-generate-preview">veo-3.1-lite-generate-preview</option>
-                    </optgroup>
-                  </select>
+                    placeholder="e.g., gemini-3.1-pro-preview"
+                    required
+                  />
+                  <datalist id="model-suggestions">
+                    <option value="gemini-3.1-pro-preview" />
+                    <option value="gemini-3-flash-preview" />
+                    <option value="gemini-2.5-flash-image" />
+                    <option value="gemini-3.1-flash-image-preview" />
+                    <option value="veo-3.1-lite-generate-preview" />
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#8A93A6] mb-2">Custom API Key (Optional)</label>

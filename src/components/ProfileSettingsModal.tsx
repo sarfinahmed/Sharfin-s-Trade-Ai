@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, AlertCircle, CheckCircle2, ShoppingBag, Package, Activity } from 'lucide-react';
 import { auth, db } from '../firebase';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Order, UsageHistory, UserProfile } from '../types';
 
 interface ProfileSettingsModalProps {
@@ -25,6 +25,8 @@ export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSe
     
     const unsubOrders = onSnapshot(qOrders, (snap) => {
       setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+    }, (error) => {
+      console.error("Orders snapshot error:", error);
     });
 
     const qHistory = query(
@@ -35,6 +37,8 @@ export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSe
 
     const unsubHistory = onSnapshot(qHistory, (snap) => {
       setHistory(snap.docs.map(d => ({ ...d.data(), id: d.id } as UsageHistory)));
+    }, (error) => {
+      console.error("History snapshot error:", error);
     });
 
     return () => {
@@ -69,7 +73,7 @@ export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSe
         <div className="bg-[#0B0E14] p-4 border-b border-[#22283A] flex justify-around">
           <div className="text-center">
             <p className="text-[#8A93A6] text-sm mb-1">Wallet Balance</p>
-            <p className="text-xl font-bold text-green-400">{userProfile.walletBalance || 0} {userProfile.preferredCurrency || 'BDT'}</p>
+            <p className="text-xl font-bold text-green-400">{userProfile.walletBalance || 0} BDT</p>
           </div>
           <div className="w-px bg-[#22283A]"></div>
           <div className="text-center">
