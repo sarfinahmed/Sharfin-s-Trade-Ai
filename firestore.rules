@@ -13,12 +13,21 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == "piccisarfin@gmail.com";
+    }
+
+    function isNormalAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.email == "piccisarfin@gmail.com" ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-      );
+      return isSuperAdmin() || isNormalAdmin();
+    }
+
+    function hasAdminPerm(perm) {
+      return isSuperAdmin() || (isNormalAdmin() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adminPermissions', {}).get(perm, false) == true);
     }
 
     function uidUnchanged() {
@@ -38,7 +47,7 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'creditBalances', 'role', 'isBlocked', 'walletBalance', 'preferredCurrency', 'toolLimits', 'referredBy']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'credits', 'creditBalances', 'role', 'adminPermissions', 'isBlocked', 'walletBalance', 'preferredCurrency', 'toolLimits', 'referredBy']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 255 &&
              (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
@@ -47,6 +56,7 @@ service cloud.firestore {
              (!('credits' in data) || data.credits is number) &&
              (!('creditBalances' in data) || data.creditBalances is map) &&
              (!('role' in data) || data.role in ['admin', 'user']) &&
+             (!('adminPermissions' in data) || data.adminPermissions is map) &&
              (!('isBlocked' in data) || data.isBlocked is bool) &&
              (!('walletBalance' in data) || data.walletBalance is number) &&
              (!('preferredCurrency' in data) || data.preferredCurrency in ['BDT', 'USD']) &&
@@ -68,7 +78,7 @@ service cloud.firestore {
     // Rules
     // ===============================================================
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || hasAdminPerm('manageUsers');
       
       // Users can create their own profile, but cannot set themselves as admin or give themselves credits
       allow create: if (isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged() &&
@@ -76,7 +86,7 @@ service cloud.firestore {
                     (!('credits' in request.resource.data) || request.resource.data.credits == 0 || request.resource.data.credits == 5) &&
                     (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0) &&
                     isCreditBalancesValid({}, request.resource.data) &&
-                    (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false)) || (isAdmin() && isOwner(userId) && isValidUser(request.resource.data));
+                    (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == false)) || (hasAdminPerm('manageUsers') && isValidUser(request.resource.data));
       
       // Users can update their profile (but not role/isBlocked). Admin can update anything.
       // Also, allow users to deduct their own credits and walletBalance.
@@ -84,62 +94,63 @@ service cloud.firestore {
                         request.resource.data.createdAt == resource.data.createdAt &&
                         request.resource.data.role == resource.data.role &&
                         request.resource.data.isBlocked == resource.data.isBlocked &&
+                        (!('adminPermissions' in request.resource.data) || request.resource.data.adminPermissions == resource.data.get('adminPermissions', {})) &&
                         (!('credits' in request.resource.data) || !('credits' in resource.data) || request.resource.data.credits <= resource.data.credits) &&
                         isCreditBalancesValid(resource.data, request.resource.data) &&
                         (!('walletBalance' in request.resource.data) || !('walletBalance' in resource.data) || request.resource.data.walletBalance <= resource.data.walletBalance)) 
-                    || isAdmin();
+                    || hasAdminPerm('manageUsers');
                     
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin(); // Only super admin can delete users
     }
 
     match /settings/{document=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if hasAdminPerm('manageSystem');
     }
 
     match /referrals/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.referrerId == request.auth.uid);
+      allow read: if hasAdminPerm('manageUsers') || (isAuthenticated() && resource.data.referrerId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.inviteeId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update, delete: if hasAdminPerm('manageUsers');
     }
 
     match /creditRequests/{requestId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if hasAdminPerm('manageStore') || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow update: if hasAdminPerm('manageStore');
+      allow delete: if hasAdminPerm('manageStore');
     }
 
     match /usageHistory/{historyId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if hasAdminPerm('viewHistory') || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update, delete: if hasAdminPerm('viewHistory');
     }
 
     match /paymentMethods/{id} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if hasAdminPerm('manageStore');
     }
 
     match /products/{id} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if hasAdminPerm('manageStore');
     }
 
     match /orders/{id} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if hasAdminPerm('manageStore') || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update, delete: if hasAdminPerm('manageStore');
     }
 
     match /aiTools/{id} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if hasAdminPerm('manageSystem');
     }
 
     match /unipin_codes/{id} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read: if hasAdminPerm('manageStore');
+      allow write: if hasAdminPerm('manageStore');
     }
   }
 }

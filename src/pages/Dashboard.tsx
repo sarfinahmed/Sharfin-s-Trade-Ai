@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell, ShoppingBag, Gamepad2, Package, CheckCircle2, Users } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Minus, AlertCircle, Loader2, Image as ImageIcon, Crosshair, Zap, BarChart2, LogOut, CreditCard, Send, Settings, Copy, Check, Bell, ShoppingBag, Gamepad2, Package, CheckCircle2, Users, Target, Shield } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { analyzeChart, AnalysisResult } from '../lib/gemini';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { UserProfile, AppSettings, PaymentMethod, Product, AITool } from '../types';
 import ProfileSettingsModal from '../components/ProfileSettingsModal';
 
@@ -17,6 +17,7 @@ interface DashboardProps {
 export default function Dashboard({ userProfile, appSettings }: DashboardProps) {
   const navigate = useNavigate();
   const [image, setImage] = useState<string | null>(null);
+  const [broker, setBroker] = useState('pocket_option');
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -41,6 +42,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   
   // Store Purchase Modal State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<any | null>(null);
   const [orderInputs, setOrderInputs] = useState<Record<string, string>>({});
   const [orderTxId, setOrderTxId] = useState('');
   const [orderPaymentMethod, setOrderPaymentMethod] = useState('');
@@ -332,7 +334,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       const mimeType = match[1];
       const base64Data = match[2];
       
-      const analysis = await analyzeChart(base64Data, mimeType, appSettings.geminiApiKey);
+      const analysis = await analyzeChart(base64Data, mimeType, appSettings.geminiApiKey, broker);
       
       // Deduct Credit
       const userRef = doc(db, 'users', userProfile.uid);
@@ -532,18 +534,20 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       {/* Product Purchase Modal */}
       {selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl my-8">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl my-8">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold flex items-center space-x-2">
                 <ShoppingBag className="w-5 h-5 text-[#A855F7]" />
                 <span>Purchase Product</span>
               </h3>
-              <button onClick={() => setSelectedProduct(null)} className="text-[#8A93A6] hover:text-white">✕</button>
+              <button onClick={() => { setSelectedProduct(null); setSelectedPackage(null); }} className="text-[#8A93A6] hover:text-white">✕</button>
             </div>
 
             <div className="bg-[#0B0E14] border border-[#22283A] rounded-xl p-5 mb-6">
               <h4 className="text-lg font-bold text-white mb-1">{selectedProduct.title}</h4>
-              <p className="text-2xl font-bold text-green-400 mb-4">{selectedProduct.priceDisplay}</p>
+              {(!selectedProduct.packages || selectedProduct.packages.length === 0) && (
+                <p className="text-2xl font-bold text-green-400 mb-4">{selectedProduct.priceDisplay}</p>
+              )}
               {selectedProduct.conditions && (
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
                   <p className="text-xs text-yellow-500 flex items-start">
@@ -554,11 +558,38 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
               )}
             </div>
 
+            {selectedProduct.packages && selectedProduct.packages.length > 0 && (
+              <div className="mb-6">
+                <h5 className="font-semibold text-white text-sm mb-3">Select Package</h5>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {selectedProduct.packages.map(pkg => (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => setSelectedPackage(pkg)}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        selectedPackage?.id === pkg.id 
+                          ? 'border-purple-500 bg-purple-500/10' 
+                          : 'border-[#22283A] bg-[#0B0E14] hover:border-purple-500/50'
+                      }`}
+                    >
+                      <div className="text-sm font-bold text-white mb-1">{pkg.name}</div>
+                      <div className="text-xs font-semibold text-green-400">{pkg.priceDisplay}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={async (e) => {
               e.preventDefault();
               
+              const finalPrice = selectedPackage ? selectedPackage.price : selectedProduct.price;
+              const finalTitle = selectedPackage ? `${selectedProduct.title} - ${selectedPackage.name}` : selectedProduct.title;
+              const finalPriceDisplay = selectedPackage ? selectedPackage.priceDisplay : selectedProduct.priceDisplay;
+
               if (orderPaymentType === 'wallet') {
-                if ((userProfile.walletBalance || 0) < (selectedProduct.price || 0)) {
+                if ((userProfile.walletBalance || 0) < (finalPrice || 0)) {
                   alert("Insufficient wallet balance.");
                   return;
                 }
@@ -590,7 +621,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 if (orderPaymentType === 'wallet') {
                   const userRef = doc(db, 'users', userProfile.uid);
                   await updateDoc(userRef, {
-                    walletBalance: (userProfile.walletBalance || 0) - (selectedProduct.price || 0)
+                    walletBalance: (userProfile.walletBalance || 0) - (finalPrice || 0)
                   });
                 }
 
@@ -606,9 +637,9 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   userId: userProfile.uid,
                   userEmail: userProfile.email,
                   productId: selectedProduct.id,
-                  productTitle: selectedProduct.title,
-                  priceDisplay: selectedProduct.priceDisplay,
-                  price: selectedProduct.price || 0,
+                  productTitle: finalTitle,
+                  priceDisplay: finalPriceDisplay,
+                  price: finalPrice || 0,
                   userInputs: orderInputs,
                   paymentMethodName: orderPaymentType === 'wallet' ? 'Wallet Balance' : orderPaymentMethod,
                   paymentType: orderPaymentType,
@@ -624,6 +655,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   alert("Order placed successfully! You can track it in your profile.");
                 }
                 setSelectedProduct(null);
+                setSelectedPackage(null);
               } catch (err) {
                 console.error("Error placing order:", err);
                 alert("Failed to place order.");
@@ -678,9 +710,9 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[#8A93A6]">Product Price:</span>
-                      <span className="font-bold text-green-400">{selectedProduct.price} BDT</span>
+                      <span className="font-bold text-green-400">{selectedPackage ? selectedPackage.price : selectedProduct.price} BDT</span>
                     </div>
-                    {(userProfile.walletBalance || 0) < (selectedProduct.price || 0) && (
+                    {(userProfile.walletBalance || 0) < ((selectedPackage ? selectedPackage.price : selectedProduct.price) || 0) && (
                       <p className="text-red-400 text-sm mt-4">Insufficient balance. Please deposit funds.</p>
                     )}
                   </div>
@@ -718,6 +750,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                             </div>
                             <p className="text-sm font-mono text-purple-400 break-all mb-2">{pm.details}</p>
                             <p className="text-xs text-[#8A93A6] mb-2">{pm.instructions}</p>
+                            <p className="text-sm font-bold text-green-400 mb-2">Amount to send: {selectedPackage ? selectedPackage.priceDisplay : selectedProduct.priceDisplay}</p>
                             {pm.qrCodeUrl && (
                               <img src={pm.qrCodeUrl} alt="QR Code" referrerPolicy="no-referrer" className="w-32 h-32 object-contain mx-auto rounded-lg bg-white p-1" />
                             )}
@@ -743,7 +776,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
 
               <button 
                 type="submit"
-                disabled={isSubmittingOrder || (orderPaymentType === 'direct' && (!orderTxId.trim() || !orderPaymentMethod)) || selectedProduct.requirements.some(req => !orderInputs[req]?.trim())}
+                disabled={isSubmittingOrder || (selectedProduct.packages?.length > 0 && !selectedPackage) || (orderPaymentType === 'direct' && (!orderTxId.trim() || !orderPaymentMethod)) || selectedProduct.requirements.some(req => !orderInputs[req]?.trim())}
                 className="w-full py-3.5 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
               >
                 {isSubmittingOrder ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
@@ -931,6 +964,23 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   <span className="text-xs text-[#8A93A6] bg-[#0B0E14] px-2 py-1 rounded border border-[#22283A]">Cost: 1 Credit</span>
                 </div>
                 
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#8A93A6] mb-2">Select Broker</label>
+                  <select 
+                    value={broker}
+                    onChange={(e) => setBroker(e.target.value)}
+                    className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2.5 px-4 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="pocket_option">Pocket Option</option>
+                    <option value="quotex">Quotex</option>
+                    <option value="exness">Exness</option>
+                    <option value="iq_option">IQ Option</option>
+                    <option value="olymptrade">Olymp Trade</option>
+                    <option value="binance">Binance</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
                 <div 
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                   onDragLeave={() => setIsDragging(false)}
@@ -1011,14 +1061,14 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 </div>
               ) : (
                 <div className="flex flex-col space-y-4 h-full">
-                  {/* Top Row: Market & Direction */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Top Row: Market, Direction & Timing */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6">
                       <div className="flex items-center space-x-2 mb-4">
                         <Crosshair className="w-4 h-4 text-[#8A93A6]" />
                         <span className="text-[11px] font-bold text-[#8A93A6] tracking-widest uppercase">Identified Market</span>
                       </div>
-                      <h3 className="text-2xl font-bold text-white">
+                      <h3 className="text-xl font-bold text-white">
                         {result ? result.market : '-'}
                       </h3>
                     </div>
@@ -1029,10 +1079,10 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                         <span className="text-[11px] font-bold text-[#8A93A6] tracking-widest uppercase">Signal Direction</span>
                       </div>
                       <div className="flex items-center space-x-3">
-                        {result?.direction === 'UP' && <TrendingUp className="w-6 h-6 text-[#10B981]" />}
-                        {result?.direction === 'DOWN' && <TrendingDown className="w-6 h-6 text-[#F43F5E]" />}
-                        {result?.direction === 'SIDEWAYS' && <Minus className="w-6 h-6 text-[#F59E0B]" />}
-                        <span className={`text-2xl font-bold tracking-wide ${
+                        {result?.direction === 'UP' && <TrendingUp className="w-5 h-5 text-[#10B981]" />}
+                        {result?.direction === 'DOWN' && <TrendingDown className="w-5 h-5 text-[#F43F5E]" />}
+                        {result?.direction === 'SIDEWAYS' && <Minus className="w-5 h-5 text-[#F59E0B]" />}
+                        <span className={`text-xl font-bold tracking-wide ${
                           result?.direction === 'UP' ? 'text-[#10B981]' : 
                           result?.direction === 'DOWN' ? 'text-[#F43F5E]' : 
                           result?.direction === 'SIDEWAYS' ? 'text-[#F59E0B]' : 'text-white'
@@ -1041,7 +1091,55 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                         </span>
                       </div>
                     </div>
+
+                    <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <Activity className="w-4 h-4 text-[#8A93A6]" />
+                        <span className="text-[11px] font-bold text-[#8A93A6] tracking-widest uppercase">
+                          {['pocket_option', 'quotex', 'iq_option', 'olymptrade'].includes(broker) ? 'Timing & Expiration' : 'Trade Timing'}
+                        </span>
+                      </div>
+                      <h3 className={`text-xl font-bold ${
+                          result?.tradeTiming?.includes('Current') ? 'text-[#10B981]' :
+                          result?.tradeTiming?.includes('Wait') ? 'text-[#F59E0B]' :
+                          result?.tradeTiming ? 'text-[#3B82F6]' : 'text-white'
+                        }`}>
+                        {result ? result.tradeTiming || 'Not Specified' : '-'}
+                      </h3>
+                      {result?.expirationTime && (
+                        <p className="text-sm text-[#8A93A6] mt-2 font-medium">
+                          Expiration: <span className="text-white">{result.expirationTime}</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Forex / Crypto specific fields (Exness/Binance) */}
+                  {(result?.entryPrice || result?.stopLoss || result?.takeProfit) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-[#8A93A6] uppercase tracking-wider">Entry Price</span>
+                          <Crosshair className="w-4 h-4 text-[#3B82F6]" />
+                        </div>
+                        <p className="text-lg font-bold text-white">{result.entryPrice || '-'}</p>
+                      </div>
+                      <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-[#8A93A6] uppercase tracking-wider">Take Profit</span>
+                          <Target className="w-4 h-4 text-[#10B981]" />
+                        </div>
+                        <p className="text-lg font-bold text-[#10B981]">{result.takeProfit || '-'}</p>
+                      </div>
+                      <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-[#8A93A6] uppercase tracking-wider">Stop Loss</span>
+                          <Shield className="w-4 h-4 text-[#F43F5E]" />
+                        </div>
+                        <p className="text-lg font-bold text-[#F43F5E]">{result.stopLoss || '-'}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Confidence Level */}
                   <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6">

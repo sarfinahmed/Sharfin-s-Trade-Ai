@@ -1,5 +1,12 @@
 import { User as FirebaseUser } from 'firebase/auth';
 
+export interface AdminPermissions {
+  manageUsers: boolean;
+  manageSystem: boolean;
+  manageStore: boolean;
+  viewHistory: boolean;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -14,6 +21,7 @@ export interface UserProfile {
     diamond: number;
   };
   role: 'admin' | 'user';
+  adminPermissions?: AdminPermissions;
   isBlocked: boolean;
   walletBalance?: number;
   preferredCurrency?: 'BDT' | 'USD';
@@ -65,6 +73,13 @@ export interface PaymentMethod {
   qrCodeUrl?: string;
 }
 
+export interface ProductPackage {
+  id: string;
+  name: string;
+  priceDisplay: string;
+  price: number;
+}
+
 export interface Product {
   id?: string;
   title: string;
@@ -78,6 +93,7 @@ export interface Product {
   conditions: string;
   isActive: boolean;
   isAutoUnipin?: boolean;
+  packages?: ProductPackage[];
   createdAt?: any;
 }
 

@@ -1,11 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy, addDoc, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
 import { UserProfile, CreditRequest, AppSettings, UsageHistory, PaymentMethod, Product, Order, AITool } from '../types';
-import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check, Cpu, Zap } from 'lucide-react';
+import { Users, CreditCard, Settings, Activity, Trash2, CheckCircle, XCircle, Shield, ShieldOff, Save, LayoutDashboard, Bell, Plus, Minus, Search, ShoppingBag, Wallet, ShoppingCart, Edit, PlusCircle, Check, Cpu, Zap, Lock } from 'lucide-react';
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'requests' | 'history' | 'settings' | 'payments' | 'store' | 'orders' | 'ai_tools' | 'referrals' | 'unipin'>('overview');
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setCurrentUserProfile(userDoc.data() as UserProfile);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const isSuperAdmin = currentUserProfile?.email === 'piccisarfin@gmail.com';
+  const perms = currentUserProfile?.adminPermissions || {
+    manageUsers: false,
+    manageSystem: false,
+    manageStore: true, // Default for normal admins
+    viewHistory: false
+  };
+
+  const canManageUsers = isSuperAdmin || perms.manageUsers;
+  const canManageSystem = isSuperAdmin || perms.manageSystem;
+  const canManageStore = isSuperAdmin || perms.manageStore;
+  const canViewHistory = isSuperAdmin || perms.viewHistory;
+
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [history, setHistory] = useState<UsageHistory[]>([]);
@@ -32,6 +59,7 @@ export default function Admin() {
   const [showAiToolForm, setShowAiToolForm] = useState(false);
   const [editingAiTool, setEditingAiTool] = useState<Partial<AITool> | null>(null);
   const [editingUserLimits, setEditingUserLimits] = useState<UserProfile | null>(null);
+  const [editingAdminPerms, setEditingAdminPerms] = useState<UserProfile | null>(null);
 
   const [showUnipinModal, setShowUnipinModal] = useState(false);
   const [unipinInputCodes, setUnipinInputCodes] = useState('');
@@ -207,55 +235,85 @@ export default function Admin() {
             <LayoutDashboard className="w-5 h-5" />
             <span className="hidden md:inline">Overview</span>
           </button>
-          <button onClick={() => setActiveTab('users')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'users' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Users className="w-5 h-5" />
-            <span className="hidden md:inline">Users</span>
+          <button onClick={() => setActiveTab('users')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'users' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Users className="w-5 h-5" />
+              <span className="hidden md:inline">Users</span>
+            </div>
+            {!canManageUsers && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('requests')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'requests' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <CreditCard className="w-5 h-5" />
-            <span className="hidden md:inline">Deposit Requests</span>
+          <button onClick={() => setActiveTab('requests')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'requests' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <CreditCard className="w-5 h-5" />
+              <span className="hidden md:inline">Deposit Requests</span>
+            </div>
+            {!canManageStore && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('history')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'history' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Activity className="w-5 h-5" />
-            <span className="hidden md:inline">Usage History</span>
+          <button onClick={() => setActiveTab('history')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'history' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Activity className="w-5 h-5" />
+              <span className="hidden md:inline">Usage History</span>
+            </div>
+            {!canViewHistory && <Lock className="w-4 h-4 text-red-400" />}
           </button>
           
           <div className="hidden md:block pt-4 pb-2">
             <p className="px-4 text-xs font-semibold text-[#8A93A6] uppercase tracking-wider">Store & Billing</p>
           </div>
           
-          <button onClick={() => setActiveTab('payments')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'payments' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Wallet className="w-5 h-5" />
-            <span className="hidden md:inline">Payment Methods</span>
+          <button onClick={() => setActiveTab('payments')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'payments' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Wallet className="w-5 h-5" />
+              <span className="hidden md:inline">Payment Methods</span>
+            </div>
+            {!canManageStore && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('store')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'store' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <ShoppingBag className="w-5 h-5" />
-            <span className="hidden md:inline">Products & Offers</span>
+          <button onClick={() => setActiveTab('store')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'store' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <ShoppingBag className="w-5 h-5" />
+              <span className="hidden md:inline">Products & Offers</span>
+            </div>
+            {!canManageStore && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('unipin')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'unipin' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Zap className="w-5 h-5" />
-            <span className="hidden md:inline">UNIPIN Codes</span>
+          <button onClick={() => setActiveTab('unipin')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'unipin' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Zap className="w-5 h-5" />
+              <span className="hidden md:inline">UNIPIN Codes</span>
+            </div>
+            {!canManageStore && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('orders')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'orders' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <ShoppingCart className="w-5 h-5" />
-            <span className="hidden md:inline">Store Orders</span>
+          <button onClick={() => setActiveTab('orders')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'orders' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <ShoppingCart className="w-5 h-5" />
+              <span className="hidden md:inline">Store Orders</span>
+            </div>
+            {!canManageStore && <Lock className="w-4 h-4 text-red-400" />}
           </button>
 
           <div className="hidden md:block pt-4 pb-2">
             <p className="px-4 text-xs font-semibold text-[#8A93A6] uppercase tracking-wider">System</p>
           </div>
 
-          <button onClick={() => setActiveTab('ai_tools')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'ai_tools' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Cpu className="w-5 h-5" />
-            <span className="hidden md:inline">AI Tools</span>
+          <button onClick={() => setActiveTab('ai_tools')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'ai_tools' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Cpu className="w-5 h-5" />
+              <span className="hidden md:inline">AI Tools</span>
+            </div>
+            {!canManageSystem && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('referrals')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'referrals' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Users className="w-5 h-5" />
-            <span className="hidden md:inline">Referrals</span>
+          <button onClick={() => setActiveTab('referrals')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'referrals' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Users className="w-5 h-5" />
+              <span className="hidden md:inline">Referrals</span>
+            </div>
+            {!canManageUsers && <Lock className="w-4 h-4 text-red-400" />}
           </button>
-          <button onClick={() => setActiveTab('settings')} className={`shrink-0 md:w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
-            <Settings className="w-5 h-5" />
-            <span className="hidden md:inline">Settings</span>
+          <button onClick={() => setActiveTab('settings')} className={`shrink-0 md:w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-[#22283A] text-white' : 'text-[#8A93A6] hover:bg-[#1A1F2E]'}`}>
+            <div className="flex items-center space-x-3">
+              <Settings className="w-5 h-5" />
+              <span className="hidden md:inline">Settings</span>
+            </div>
+            {!canManageSystem && <Lock className="w-4 h-4 text-red-400" />}
           </button>
         </nav>
         
@@ -300,47 +358,55 @@ export default function Admin() {
 
         {activeTab === 'users' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h3 className="text-2xl font-bold">Registered Users</h3>
-              <div className="relative">
-                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-[#8A93A6]" />
-                <input 
-                  type="text" 
-                  placeholder="Search by email..."
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 bg-[#131722] border border-[#22283A] rounded-xl text-white focus:outline-none focus:border-purple-500 transition-colors w-full sm:w-64"
-                />
+            {!canManageUsers ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage users.</p>
               </div>
-            </div>
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
-                  <tr>
-                    <th className="px-6 py-4">Email</th>
-                    <th className="px-6 py-4">Ai Credits</th>
-                    <th className="px-6 py-4">Bronze</th>
-                    <th className="px-6 py-4">Silver</th>
-                    <th className="px-6 py-4">Gold</th>
-                    <th className="px-6 py-4">Diamond</th>
-                    <th className="px-6 py-4">Wallet Balance</th>
-                    <th className="px-6 py-4">Role</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#22283A]">
-                  {users.filter(u => u.email.toLowerCase().includes(userSearch.toLowerCase())).map(u => (
-                    <tr key={u.uid} className="hover:bg-[#1A1F2E]/50 transition-colors">
-                      <td className="px-6 py-4">{u.email}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="number" 
-                            value={u.credits || 0}
-                            onChange={(e) => handleUpdateUser(u.uid, { credits: parseInt(e.target.value) || 0 })}
-                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
-                          />
+            ) : (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h3 className="text-2xl font-bold">Registered Users</h3>
+                  <div className="relative">
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-[#8A93A6]" />
+                    <input 
+                      type="text" 
+                      placeholder="Search by email..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="pl-10 pr-4 py-2 bg-[#131722] border border-[#22283A] rounded-xl text-white focus:outline-none focus:border-purple-500 transition-colors w-full sm:w-64"
+                    />
+                  </div>
+                </div>
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-4">Email</th>
+                        <th className="px-6 py-4">Ai Credits</th>
+                        <th className="px-6 py-4">Bronze</th>
+                        <th className="px-6 py-4">Silver</th>
+                        <th className="px-6 py-4">Gold</th>
+                        <th className="px-6 py-4">Diamond</th>
+                        <th className="px-6 py-4">Wallet Balance</th>
+                        <th className="px-6 py-4">Role</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#22283A]">
+                      {users.filter(u => u.email.toLowerCase().includes(userSearch.toLowerCase())).map(u => (
+                        <tr key={u.uid} className="hover:bg-[#1A1F2E]/50 transition-colors">
+                          <td className="px-6 py-4">{u.email}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-2">
+                              <input 
+                                type="number" 
+                                value={u.credits || 0}
+                                onChange={(e) => handleUpdateUser(u.uid, { credits: parseInt(e.target.value) || 0 })}
+                                className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
+                              />
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -398,10 +464,19 @@ export default function Admin() {
                           value={u.role || 'user'}
                           onChange={(e) => handleUpdateUser(u.uid, { role: e.target.value as 'admin' | 'user' })}
                           className="bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
+                          disabled={!isSuperAdmin && u.email === 'piccisarfin@gmail.com'}
                         >
                           <option value="user">User</option>
                           <option value="admin">Admin</option>
                         </select>
+                        {u.role === 'admin' && u.email !== 'piccisarfin@gmail.com' && isSuperAdmin && (
+                          <button
+                            onClick={() => setEditingAdminPerms(u)}
+                            className="ml-2 text-xs text-purple-400 hover:text-purple-300 underline"
+                          >
+                            Perms
+                          </button>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded text-xs font-bold ${u.isBlocked ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
@@ -436,15 +511,25 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'requests' && (
           <div className="space-y-6">
-            <h3 className="text-2xl font-bold">Credit Requests</h3>
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
+            {!canManageStore ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage store and billing.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold">Credit Requests</h3>
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">User</th>
                     <th className="px-6 py-4">Type</th>
@@ -507,14 +592,24 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'history' && (
           <div className="space-y-6">
-            <h3 className="text-2xl font-bold">Usage History</h3>
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
-              <table className="w-full text-left">
+            {!canViewHistory ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view usage history.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold">Usage History</h3>
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left">
                 <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">User</th>
@@ -542,24 +637,34 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'payments' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-bold">Payment Methods</h3>
-              <button 
-                onClick={() => {
-                  setEditingPayment({ name: '', details: '', instructions: '', isActive: true });
-                  setShowPaymentForm(true);
-                }}
-                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                <PlusCircle className="w-5 h-5" />
-                <span>Add Method</span>
-              </button>
-            </div>
+            {!canManageStore ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage store and billing.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-2xl font-bold">Payment Methods</h3>
+                  <button 
+                    onClick={() => {
+                      setEditingPayment({ name: '', details: '', instructions: '', isActive: true });
+                      setShowPaymentForm(true);
+                    }}
+                    className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <PlusCircle className="w-5 h-5" />
+                    <span>Add Method</span>
+                  </button>
+                </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {paymentMethods.map(pm => (
@@ -596,24 +701,34 @@ export default function Admin() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'store' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-bold">Products & Offers</h3>
-              <button 
-                onClick={() => {
-                  setEditingProduct({ title: '', description: '', priceDisplay: '', category: 'game_topup', requirements: [], conditions: '', isActive: true, isAutoUnipin: false });
-                  setShowProductForm(true);
-                }}
-                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                <PlusCircle className="w-5 h-5" />
-                <span>Add Product</span>
-              </button>
-            </div>
+            {!canManageStore ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage store and billing.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-2xl font-bold">Products & Offers</h3>
+                  <button 
+                    onClick={() => {
+                      setEditingProduct({ title: '', description: '', priceDisplay: '', category: 'game_topup', requirements: [], conditions: '', isActive: true, isAutoUnipin: false });
+                      setShowProductForm(true);
+                    }}
+                    className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <PlusCircle className="w-5 h-5" />
+                    <span>Add Product</span>
+                  </button>
+                </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {products.map(p => (
@@ -652,14 +767,24 @@ export default function Admin() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'orders' && (
           <div className="space-y-6">
-            <h3 className="text-2xl font-bold">Store Orders</h3>
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
-              <table className="w-full text-left">
+            {!canManageStore ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage store and billing.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold">Store Orders</h3>
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left">
                 <thead className="bg-[#1A1F2E] text-[#8A93A6] text-sm uppercase tracking-wider">
                   <tr>
                     <th className="px-6 py-4">User</th>
@@ -752,25 +877,35 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'unipin' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-2xl font-bold">UNIPIN Codes Management</h3>
-              <button 
-                onClick={() => {
-                  setUnipinInputCodes('');
-                  setUnipinInputProductId('');
-                  setShowUnipinModal(true);
-                }}
-                className="flex items-center space-x-2 bg-gradient-to-r from-[#8B5CF6] to-[#3B82F6] hover:opacity-90 text-white px-4 py-2 rounded-xl transition-opacity"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Add Codes</span>
-              </button>
-            </div>
+            {!canManageStore ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage store and billing.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-2xl font-bold">UNIPIN Codes Management</h3>
+                  <button 
+                    onClick={() => {
+                      setUnipinInputCodes('');
+                      setUnipinInputProductId('');
+                      setShowUnipinModal(true);
+                    }}
+                    className="flex items-center space-x-2 bg-gradient-to-r from-[#8B5CF6] to-[#3B82F6] hover:opacity-90 text-white px-4 py-2 rounded-xl transition-opacity"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span>Add Codes</span>
+                  </button>
+                </div>
 
             <div className="bg-[#131722] border border-[#22283A] rounded-2xl overflow-hidden">
               <table className="w-full text-left">
@@ -823,35 +958,45 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'ai_tools' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-2xl font-bold">AI Tools Management</h3>
-              <button 
-                onClick={() => {
-                  setEditingAiTool({
-                    title: '',
-                    description: '',
-                    type: 'image_to_image',
-                    model: 'gemini-2.5-flash-image',
-                    systemPrompt: '',
-                    userPromptAllowed: true,
-                    cost: 1,
-                    costType: 'credit',
-                    defaultFreeUses: 0,
-                    isActive: true
-                  });
-                  setShowAiToolForm(true);
-                }}
-                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Add AI Tool</span>
-              </button>
-            </div>
+            {!canManageSystem ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage system settings.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-2xl font-bold">AI Tools Management</h3>
+                  <button 
+                    onClick={() => {
+                      setEditingAiTool({
+                        title: '',
+                        description: '',
+                        type: 'image_to_image',
+                        model: 'gemini-2.5-flash-image',
+                        systemPrompt: '',
+                        userPromptAllowed: true,
+                        cost: 1,
+                        costType: 'credit',
+                        defaultFreeUses: 0,
+                        isActive: true
+                      });
+                      setShowAiToolForm(true);
+                    }}
+                    className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl transition-colors"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span>Add AI Tool</span>
+                  </button>
+                </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {aiTools.map(tool => (
@@ -917,15 +1062,25 @@ export default function Admin() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'referrals' && (
           <div className="space-y-6">
-            <h3 className="text-2xl font-bold">Referral System</h3>
-            
-            {/* Settings */}
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 space-y-6 max-w-2xl">
+            {!canManageUsers ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage referrals.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold">Referral System</h3>
+                
+                {/* Settings */}
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 space-y-6 max-w-2xl">
               <h4 className="text-lg font-bold text-white">Referral Settings</h4>
               <div className="flex items-center space-x-3">
                 <button 
@@ -1057,13 +1212,23 @@ export default function Admin() {
                 </table>
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {activeTab === 'settings' && (
           <div className="space-y-6 max-w-2xl">
-            <h3 className="text-2xl font-bold">App Settings</h3>
-            <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 space-y-6">
+            {!canManageSystem ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Lock className="w-16 h-16 text-red-500/50 mb-4" />
+                <h3 className="text-2xl font-bold text-white mb-2">Access Denied</h3>
+                <p className="text-[#8A93A6]">You do not have permission to view or manage system settings.</p>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold">App Settings</h3>
+                <div className="bg-[#131722] border border-[#22283A] rounded-2xl p-6 space-y-6">
               
               <div>
                 <label className="block text-sm font-medium text-[#8A93A6] mb-2">App Name</label>
@@ -1095,6 +1260,29 @@ export default function Admin() {
                   placeholder="https://example.com/logo.png"
                   className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
                 />
+                {settings.logoUrl && (
+                  <div className="mt-2 text-xs text-[#8A93A6]">
+                    Preview:
+                    <img 
+                      src={settings.logoUrl} 
+                      alt="Logo Preview" 
+                      referrerPolicy="no-referrer"
+                      className="mt-1 h-12 w-12 rounded-xl border border-[#22283A] object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        const errText = document.createElement('span');
+                        errText.className = 'text-red-400 ml-2';
+                        errText.innerText = 'Invalid image URL or blocked by CORS';
+                        (e.target as HTMLImageElement).parentElement?.appendChild(errText);
+                      }}
+                      onLoad={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'block';
+                        const errText = (e.target as HTMLImageElement).parentElement?.querySelector('span');
+                        if (errText) errText.remove();
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1141,6 +1329,29 @@ export default function Admin() {
                       className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-3 px-4 text-white focus:outline-none focus:border-purple-500 transition-colors"
                       placeholder="https://example.com/banner.png"
                     />
+                    {settings.promoBannerUrl && (
+                      <div className="mt-2 text-xs text-[#8A93A6]">
+                        Preview:
+                        <img 
+                          src={settings.promoBannerUrl} 
+                          alt="Banner Preview" 
+                          referrerPolicy="no-referrer"
+                          className="mt-1 h-32 w-auto rounded-xl border border-[#22283A] object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const errText = document.createElement('span');
+                            errText.className = 'text-red-400 ml-2';
+                            errText.innerText = 'Invalid image URL or blocked by CORS';
+                            (e.target as HTMLImageElement).parentElement?.appendChild(errText);
+                          }}
+                          onLoad={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'block';
+                            const errText = (e.target as HTMLImageElement).parentElement?.querySelector('span');
+                            if (errText) errText.remove();
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-[#8A93A6] mb-2">Telegram Link</label>
@@ -1226,6 +1437,8 @@ export default function Admin() {
                 <span>Save Settings</span>
               </button>
             </div>
+            </>
+            )}
           </div>
         )}
       </div>
@@ -1454,6 +1667,29 @@ export default function Admin() {
                     className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
                     placeholder="https://example.com/product.png"
                   />
+                  {editingProduct.imageUrl && (
+                    <div className="mt-2 text-xs text-[#8A93A6]">
+                      Preview:
+                      <img 
+                        src={editingProduct.imageUrl} 
+                        alt="Preview" 
+                        referrerPolicy="no-referrer"
+                        className="mt-1 h-20 w-auto rounded border border-[#22283A] object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const errText = document.createElement('span');
+                          errText.className = 'text-red-400 ml-2';
+                          errText.innerText = 'Invalid image URL or blocked by CORS';
+                          (e.target as HTMLImageElement).parentElement?.appendChild(errText);
+                        }}
+                        onLoad={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'block';
+                          const errText = (e.target as HTMLImageElement).parentElement?.querySelector('span');
+                          if (errText) errText.remove();
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#8A93A6] mb-2">Image Aspect Ratio</label>
@@ -1519,6 +1755,77 @@ export default function Admin() {
                   className="w-4 h-4 rounded border-[#22283A] bg-[#0B0E14] text-purple-500 focus:ring-purple-500"
                 />
                 <label className="text-sm font-medium text-white">Auto UNIPIN Delivery (System will automatically deliver an unused UNIPIN code for this product)</label>
+              </div>
+
+              <div className="pt-4 border-t border-[#22283A]">
+                <div className="flex items-center justify-between mb-4">
+                  <label className="block text-sm font-medium text-white">Packages / Grid Items (Optional)</label>
+                  <button
+                    onClick={() => {
+                      const newPackage = { id: Date.now().toString(), name: '', priceDisplay: '', price: 0 };
+                      setEditingProduct({
+                        ...editingProduct,
+                        packages: [...(editingProduct.packages || []), newPackage]
+                      });
+                    }}
+                    className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded transition-colors"
+                  >
+                    + Add Package
+                  </button>
+                </div>
+                <p className="text-xs text-[#8A93A6] mb-4">If you add packages, this product will be displayed as a grid of selectable options (like a chart) instead of a single item.</p>
+                
+                <div className="space-y-3">
+                  {(editingProduct.packages || []).map((pkg, index) => (
+                    <div key={pkg.id} className="flex items-start space-x-2 bg-[#0B0E14] p-3 rounded-xl border border-[#22283A]">
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input
+                          type="text"
+                          value={pkg.name}
+                          onChange={(e) => {
+                            const newPackages = [...(editingProduct.packages || [])];
+                            newPackages[index].name = e.target.value;
+                            setEditingProduct({ ...editingProduct, packages: newPackages });
+                          }}
+                          placeholder="Name (e.g. 50 DIAMOND)"
+                          className="w-full bg-[#131722] border border-[#22283A] rounded-lg py-1.5 px-3 text-white focus:outline-none focus:border-purple-500 text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={pkg.priceDisplay}
+                          onChange={(e) => {
+                            const newPackages = [...(editingProduct.packages || [])];
+                            newPackages[index].priceDisplay = e.target.value;
+                            setEditingProduct({ ...editingProduct, packages: newPackages });
+                          }}
+                          placeholder="Price Display (e.g. 36৳)"
+                          className="w-full bg-[#131722] border border-[#22283A] rounded-lg py-1.5 px-3 text-white focus:outline-none focus:border-purple-500 text-sm"
+                        />
+                        <input
+                          type="number"
+                          value={pkg.price || 0}
+                          onChange={(e) => {
+                            const newPackages = [...(editingProduct.packages || [])];
+                            newPackages[index].price = parseInt(e.target.value) || 0;
+                            setEditingProduct({ ...editingProduct, packages: newPackages });
+                          }}
+                          placeholder="Numeric Price"
+                          className="w-full bg-[#131722] border border-[#22283A] rounded-lg py-1.5 px-3 text-white focus:outline-none focus:border-purple-500 text-sm"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const newPackages = [...(editingProduct.packages || [])];
+                          newPackages.splice(index, 1);
+                          setEditingProduct({ ...editingProduct, packages: newPackages });
+                        }}
+                        className="p-1.5 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex space-x-3 mt-8">
@@ -1619,6 +1926,110 @@ export default function Admin() {
                 className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
               >
                 Save Limits
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Permissions Modal */}
+      {editingAdminPerms && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-[#131722] border border-[#22283A] rounded-2xl w-full max-w-md p-6 my-8">
+            <h3 className="text-xl font-bold text-white mb-2">Manage Admin Permissions</h3>
+            <p className="text-[#8A93A6] mb-6 text-sm">Admin: {editingAdminPerms.email}</p>
+            
+            <div className="space-y-4">
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editingAdminPerms.adminPermissions?.manageUsers || false}
+                  onChange={(e) => setEditingAdminPerms({
+                    ...editingAdminPerms,
+                    adminPermissions: {
+                      ...(editingAdminPerms.adminPermissions || { manageStore: true, manageSystem: false, viewHistory: false }),
+                      manageUsers: e.target.checked
+                    }
+                  })}
+                  className="w-5 h-5 rounded border-[#22283A] bg-[#0B0E14] text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-white">Manage Users</span>
+              </label>
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editingAdminPerms.adminPermissions?.manageSystem || false}
+                  onChange={(e) => setEditingAdminPerms({
+                    ...editingAdminPerms,
+                    adminPermissions: {
+                      ...(editingAdminPerms.adminPermissions || { manageStore: true, manageUsers: false, viewHistory: false }),
+                      manageSystem: e.target.checked
+                    }
+                  })}
+                  className="w-5 h-5 rounded border-[#22283A] bg-[#0B0E14] text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-white">Manage System Settings</span>
+              </label>
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editingAdminPerms.adminPermissions?.manageStore ?? true}
+                  onChange={(e) => setEditingAdminPerms({
+                    ...editingAdminPerms,
+                    adminPermissions: {
+                      ...(editingAdminPerms.adminPermissions || { manageSystem: false, manageUsers: false, viewHistory: false }),
+                      manageStore: e.target.checked
+                    }
+                  })}
+                  className="w-5 h-5 rounded border-[#22283A] bg-[#0B0E14] text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-white">Manage Store & Billing</span>
+              </label>
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editingAdminPerms.adminPermissions?.viewHistory || false}
+                  onChange={(e) => setEditingAdminPerms({
+                    ...editingAdminPerms,
+                    adminPermissions: {
+                      ...(editingAdminPerms.adminPermissions || { manageStore: true, manageSystem: false, manageUsers: false }),
+                      viewHistory: e.target.checked
+                    }
+                  })}
+                  className="w-5 h-5 rounded border-[#22283A] bg-[#0B0E14] text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-white">View Usage History</span>
+              </label>
+            </div>
+
+            <div className="flex space-x-3 mt-8">
+              <button 
+                onClick={() => setEditingAdminPerms(null)}
+                className="flex-1 py-2 rounded-xl font-semibold bg-[#22283A] text-white hover:bg-[#2A3143] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    await updateDoc(doc(db, 'users', editingAdminPerms.uid), {
+                      adminPermissions: editingAdminPerms.adminPermissions || {
+                        manageUsers: false,
+                        manageSystem: false,
+                        manageStore: true,
+                        viewHistory: false
+                      }
+                    });
+                    showToast("Admin permissions updated successfully");
+                    setEditingAdminPerms(null);
+                  } catch (err) {
+                    console.error("Error updating permissions:", err);
+                    showToast("Failed to update permissions", "error");
+                  }
+                }}
+                className="flex-1 py-2 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+              >
+                Save Permissions
               </button>
             </div>
           </div>
