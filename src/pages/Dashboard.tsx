@@ -65,6 +65,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
   const [aiResult, setAiResult] = useState<{ type: string, url?: string, text?: string } | null>(null);
   const [aiResultTimer, setAiResultTimer] = useState<number | null>(null);
   const [errorModal, setErrorModal] = useState<{title: string, message: string} | null>(null);
+  const [showLimitReachedModal, setShowLimitReachedModal] = useState(false);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGenerateAi = async () => {
@@ -77,12 +78,6 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       if (activeAiTool.costType === 'credit' && userProfile.credits < activeAiTool.cost) {
         setErrorModal({ title: "Insufficient Credits", message: `You need ${activeAiTool.cost} Ai credits to use this tool.` });
         return;
-      } else if (['bronze', 'silver', 'gold', 'diamond'].includes(activeAiTool.costType)) {
-        const balance = userProfile.creditBalances?.[activeAiTool.costType as keyof typeof userProfile.creditBalances] || 0;
-        if (balance < activeAiTool.cost) {
-          setErrorModal({ title: "Insufficient Credits", message: `You need ${activeAiTool.cost} ${activeAiTool.costType} credits to use this tool.` });
-          return;
-        }
       } else if (activeAiTool.costType === 'wallet' && (userProfile.walletBalance || 0) < activeAiTool.cost) {
         setErrorModal({ title: "Insufficient Balance", message: `You need ${activeAiTool.cost} BDT in your wallet to use this tool.` });
         return;
@@ -101,9 +96,6 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
       } else {
         if (activeAiTool.costType === 'credit') {
           updates.credits = userProfile.credits - activeAiTool.cost;
-        } else if (['bronze', 'silver', 'gold', 'diamond'].includes(activeAiTool.costType)) {
-          const currentBalance = userProfile.creditBalances?.[activeAiTool.costType as keyof typeof userProfile.creditBalances] || 0;
-          updates[`creditBalances.${activeAiTool.costType}`] = currentBalance - activeAiTool.cost;
         } else if (activeAiTool.costType === 'wallet') {
           updates.walletBalance = (userProfile.walletBalance || 0) - activeAiTool.cost;
         }
@@ -317,8 +309,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
     if (!image) return;
     
     if (userProfile.credits <= 0) {
-      setError("No credits available. Please purchase credits.");
-      setShowCreditModal(true);
+      setShowLimitReachedModal(true);
       return;
     }
 
@@ -792,6 +783,44 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
         <ProfileSettingsModal onClose={() => setShowProfileModal(false)} userProfile={userProfile} />
       )}
 
+      {/* Limit Reached Modal */}
+      {showLimitReachedModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#131722] border border-[#22283A] rounded-3xl p-8 max-w-sm w-full shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500" />
+            
+            <div className="w-20 h-20 bg-[#1A1F2E] rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(168,85,247,0.15)]">
+              <Zap className="w-10 h-10 text-[#A855F7]" />
+            </div>
+            
+            <h3 className="text-2xl font-bold text-white text-center mb-3 tracking-tight">Opps! Limit Reached</h3>
+            
+            <p className="text-[#8A93A6] text-center mb-8 leading-relaxed">
+              Looks like you've run out of AI Credits for chart analysis. Top up your balance to continue using professional tools and making profitable trades.
+            </p>
+            
+            <div className="space-y-3">
+              <button 
+                onClick={() => {
+                  setShowLimitReachedModal(false);
+                  setDepositType('credit');
+                  setShowCreditModal(true);
+                }}
+                className="w-full py-3.5 rounded-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg transition-all duration-200 transform hover:scale-[1.02]"
+              >
+                Top Up Credits
+              </button>
+              <button 
+                onClick={() => setShowLimitReachedModal(false)}
+                className="w-full py-3.5 rounded-xl font-semibold bg-transparent border border-[#22283A] hover:bg-[#1A1F2E] text-[#8A93A6] transition-colors"
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Error Modal */}
       {errorModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -844,26 +873,6 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                 Add
               </button>
             </div>
-            {userProfile.creditBalances?.bronze !== undefined && (
-              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
-                <span className="text-sm font-bold text-[#CD7F32]">{userProfile.creditBalances.bronze} <span className="hidden sm:inline">Bronze</span></span>
-              </div>
-            )}
-            {userProfile.creditBalances?.silver !== undefined && (
-              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
-                <span className="text-sm font-bold text-[#C0C0C0]">{userProfile.creditBalances.silver} <span className="hidden sm:inline">Silver</span></span>
-              </div>
-            )}
-            {userProfile.creditBalances?.gold !== undefined && (
-              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
-                <span className="text-sm font-bold text-[#FFD700]">{userProfile.creditBalances.gold} <span className="hidden sm:inline">Gold</span></span>
-              </div>
-            )}
-            {userProfile.creditBalances?.diamond !== undefined && (
-              <div className="hidden md:flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
-                <span className="text-sm font-bold text-[#00FFFF]">{userProfile.creditBalances.diamond} <span className="hidden sm:inline">Diamond</span></span>
-              </div>
-            )}
             <div className="flex items-center space-x-2 bg-[#131722] border border-[#22283A] px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg">
               <CreditCard className="w-4 h-4 text-green-400" />
               <span className="text-sm font-bold text-white">{userProfile.walletBalance || 0} <span className="hidden sm:inline">BDT</span></span>
@@ -1200,7 +1209,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                       <p className="text-[#8A93A6] mb-4 flex-grow">{tool.description}</p>
                       
                       <div className="flex justify-between items-center mb-6 text-sm">
-                        <span className="text-gray-400">Cost: <span className="text-white font-bold">{tool.cost} {tool.costType}</span></span>
+                        <span className="text-gray-400">Cost: <span className="text-white font-bold">{tool.cost} {tool.costType === 'wallet' ? 'BDT' : 'Ai Credits'}</span></span>
                         <span className="text-gray-400">Free Uses Left: <span className="text-green-400 font-bold">{remainingUses}</span></span>
                       </div>
                       
@@ -1296,7 +1305,7 @@ export default function Dashboard({ userProfile, appSettings }: DashboardProps) 
                   <div className="flex items-center justify-between pt-4 border-t border-[#22283A]">
                     <div className="text-sm">
                       <span className="text-[#8A93A6]">Cost: </span>
-                      <span className="text-white font-bold">{activeAiTool.cost} {activeAiTool.costType}</span>
+                      <span className="text-white font-bold">{activeAiTool.cost} {activeAiTool.costType === 'wallet' ? 'BDT' : 'Ai Credits'}</span>
                       <span className="text-[#8A93A6] ml-4">Free uses left: </span>
                       <span className="text-green-400 font-bold">{userProfile.toolLimits?.[activeAiTool.id!] ?? activeAiTool.defaultFreeUses}</span>
                     </div>

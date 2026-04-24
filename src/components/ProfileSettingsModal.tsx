@@ -80,26 +80,6 @@ export default function ProfileSettingsModal({ onClose, userProfile }: ProfileSe
             <p className="text-[#8A93A6] text-sm mb-1">Ai Credits</p>
             <p className="text-xl font-bold text-[#F59E0B]">{userProfile.credits || 0}</p>
           </div>
-          <div className="w-px bg-[#22283A]"></div>
-          <div className="text-center">
-            <p className="text-[#8A93A6] text-sm mb-1">Bronze</p>
-            <p className="text-xl font-bold text-[#CD7F32]">{userProfile.creditBalances?.bronze || 0}</p>
-          </div>
-          <div className="w-px bg-[#22283A]"></div>
-          <div className="text-center">
-            <p className="text-[#8A93A6] text-sm mb-1">Silver</p>
-            <p className="text-xl font-bold text-[#C0C0C0]">{userProfile.creditBalances?.silver || 0}</p>
-          </div>
-          <div className="w-px bg-[#22283A]"></div>
-          <div className="text-center">
-            <p className="text-[#8A93A6] text-sm mb-1">Gold</p>
-            <p className="text-xl font-bold text-[#FFD700]">{userProfile.creditBalances?.gold || 0}</p>
-          </div>
-          <div className="w-px bg-[#22283A]"></div>
-          <div className="text-center">
-            <p className="text-[#8A93A6] text-sm mb-1">Diamond</p>
-            <p className="text-xl font-bold text-[#00FFFF]">{userProfile.creditBalances?.diamond || 0}</p>
-          </div>
         </div>
 
         <div className="p-6 overflow-y-auto custom-scrollbar">

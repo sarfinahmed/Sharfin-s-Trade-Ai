@@ -385,10 +385,6 @@ export default function Admin() {
                       <tr>
                         <th className="px-6 py-4">Email</th>
                         <th className="px-6 py-4">Ai Credits</th>
-                        <th className="px-6 py-4">Bronze</th>
-                        <th className="px-6 py-4">Silver</th>
-                        <th className="px-6 py-4">Gold</th>
-                        <th className="px-6 py-4">Diamond</th>
                         <th className="px-6 py-4">Wallet Balance</th>
                         <th className="px-6 py-4">Role</th>
                         <th className="px-6 py-4">Status</th>
@@ -407,46 +403,6 @@ export default function Admin() {
                                 onChange={(e) => handleUpdateUser(u.uid, { credits: parseInt(e.target.value) || 0 })}
                                 className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-white"
                               />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="number" 
-                            value={u.creditBalances?.bronze || 0}
-                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, bronze: parseInt(e.target.value) || 0 } })}
-                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#CD7F32]"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="number" 
-                            value={u.creditBalances?.silver || 0}
-                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, silver: parseInt(e.target.value) || 0 } })}
-                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#C0C0C0]"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="number" 
-                            value={u.creditBalances?.gold || 0}
-                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, gold: parseInt(e.target.value) || 0 } })}
-                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#FFD700]"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                            type="number" 
-                            value={u.creditBalances?.diamond || 0}
-                            onChange={(e) => handleUpdateUser(u.uid, { creditBalances: { ...u.creditBalances, diamond: parseInt(e.target.value) || 0 } })}
-                            className="w-16 bg-[#0B0E14] border border-[#22283A] rounded px-2 py-1 text-[#00FFFF]"
-                          />
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -1038,7 +994,7 @@ export default function Admin() {
                     </div>
                     <div className="flex justify-between">
                       <span>Cost:</span>
-                      <span className="text-white">{tool.cost} {tool.costType}</span>
+                      <span className="text-white">{tool.cost} {tool.costType === 'wallet' ? 'BDT' : 'Ai Credits'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>User Prompt:</span>
@@ -1115,10 +1071,6 @@ export default function Admin() {
                   className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors"
                 >
                   <option value="wallet">Wallet Balance</option>
-                  <option value="bronze">Bronze Credits</option>
-                  <option value="silver">Silver Credits</option>
-                  <option value="gold">Gold Credits</option>
-                  <option value="diamond">Diamond Credits</option>
                   <option value="credits">Normal Credits</option>
                 </select>
               </div>
@@ -1178,11 +1130,6 @@ export default function Admin() {
                                   
                                   if (ref.rewardType === 'wallet') {
                                     updates.walletBalance = (referrerData.walletBalance || 0) + ref.rewardAmount;
-                                  } else if (['bronze', 'silver', 'gold', 'diamond'].includes(ref.rewardType)) {
-                                    updates.creditBalances = {
-                                      ...referrerData.creditBalances,
-                                      [ref.rewardType]: (referrerData.creditBalances?.[ref.rewardType] || 0) + ref.rewardAmount
-                                    };
                                   } else if (ref.rewardType === 'credits') {
                                     updates.credits = (referrerData.credits || 0) + ref.rewardAmount;
                                   }
@@ -2141,10 +2088,6 @@ export default function Admin() {
                     className="w-full bg-[#0B0E14] border border-[#22283A] rounded-xl py-2 px-4 text-white focus:outline-none focus:border-purple-500"
                   >
                     <option value="credit">Ai Credits (Default)</option>
-                    <option value="bronze">Bronze Credits</option>
-                    <option value="silver">Silver Credits</option>
-                    <option value="gold">Gold Credits</option>
-                    <option value="diamond">Diamond Credits</option>
                     <option value="wallet">Wallet Balance</option>
                   </select>
                 </div>
